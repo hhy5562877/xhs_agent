@@ -1,12 +1,16 @@
 import asyncio
 import logging
 import os
+from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from ..api.schemas import GenerateRequest, GenerateResponse
 from ..agent.xhs_agent import run
 from ..services.upload_service import download_image_to_tmp, upload_image_note
 from ..services import account_service
+from ..services import goal_service
+from ..services.manager_service import plan_operation, calc_scheduled_time
+from ..services.scheduler_service import schedule_post
 
 logger = logging.getLogger("xhs_agent")
 router = APIRouter(prefix="/api", tags=["xhs"])
@@ -14,8 +18,8 @@ router = APIRouter(prefix="/api", tags=["xhs"])
 
 # ── 生成 ──────────────────────────────────────────────
 class UploadRequest(BaseModel):
-    account_id: str | None = None   # 使用已保存账号
-    cookie: str | None = None       # 或直接传 cookie
+    account_id: str | None = None
+    cookie: str | None = None
     title: str
     desc: str
     image_urls: list[str]
@@ -37,13 +41,11 @@ async def generate(request: GenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── 上传 ──────────────────────────────────────────────
 @router.post("/upload", response_model=UploadResponse)
 async def upload(request: UploadRequest):
-    # 解析 cookie
     cookie = request.cookie
     if request.account_id:
-        cookie = account_service.get_cookie(request.account_id)
+        cookie = await account_service.get_cookie(request.account_id)
         if not cookie:
             raise HTTPException(status_code=404, detail="账号不存在")
     if not cookie:
@@ -54,12 +56,7 @@ async def upload(request: UploadRequest):
         logger.info(f"下载 {len(request.image_urls)} 张图片...")
         tmp_paths = await asyncio.gather(*[download_image_to_tmp(u) for u in request.image_urls])
         result = await asyncio.to_thread(
-            upload_image_note,
-            cookie,
-            request.title,
-            request.desc,
-            list(tmp_paths),
-            request.hashtags,
+            upload_image_note, cookie, request.title, request.desc, list(tmp_paths), request.hashtags,
         )
         note_id = result.get("note_id") if isinstance(result, dict) else None
         return UploadResponse(success=True, note_id=note_id)
@@ -86,23 +83,106 @@ class AccountUpdate(BaseModel):
 
 
 @router.get("/accounts")
-def get_accounts():
-    return account_service.list_accounts()
+async def get_accounts():
+    return await account_service.list_accounts()
 
 
 @router.post("/accounts", status_code=201)
-def create_account(body: AccountCreate):
-    return account_service.add_account(body.name, body.cookie)
+async def create_account(body: AccountCreate):
+    return await account_service.add_account(body.name, body.cookie)
 
 
 @router.delete("/accounts/{account_id}", status_code=204)
-def delete_account(account_id: str):
-    if not account_service.delete_account(account_id):
+async def delete_account(account_id: str):
+    if not await account_service.delete_account(account_id):
         raise HTTPException(status_code=404, detail="账号不存在")
 
 
 @router.patch("/accounts/{account_id}")
-def update_account(account_id: str, body: AccountUpdate):
-    if not account_service.update_account(account_id, body.name, body.cookie):
+async def update_account(account_id: str, body: AccountUpdate):
+    if not await account_service.update_account(account_id, body.name, body.cookie):
         raise HTTPException(status_code=404, detail="账号不存在")
     return {"ok": True}
+
+
+# ── 运营目标 ──────────────────────────────────────────
+class GoalCreate(BaseModel):
+    title: str
+    description: str
+    style: str = "生活方式"
+    post_freq: int = 1
+    account_id: str
+
+
+class PlanRequest(BaseModel):
+    goal_id: int
+    account_id: str
+
+
+@router.get("/goals")
+async def get_goals():
+    return await goal_service.list_goals()
+
+
+@router.post("/goals", status_code=201)
+async def create_goal(body: GoalCreate):
+    return await goal_service.create_goal(body.title, body.description, body.style, body.post_freq)
+
+
+@router.delete("/goals/{goal_id}", status_code=204)
+async def delete_goal(goal_id: int):
+    if not await goal_service.delete_goal(goal_id):
+        raise HTTPException(status_code=404, detail="目标不存在")
+
+
+@router.patch("/goals/{goal_id}/toggle")
+async def toggle_goal(goal_id: int, active: bool):
+    if not await goal_service.toggle_goal(goal_id, active):
+        raise HTTPException(status_code=404, detail="目标不存在")
+    return {"ok": True}
+
+
+# ── AI 规划 + 排期 ────────────────────────────────────
+@router.post("/goals/{goal_id}/plan")
+async def plan_goal(goal_id: int, body: PlanRequest):
+    """让总管 AI 分析目标，生成并保存7天发布计划"""
+    goal = await goal_service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="目标不存在")
+
+    cookie = await account_service.get_cookie(body.account_id)
+    if not cookie:
+        raise HTTPException(status_code=404, detail="账号不存在")
+
+    try:
+        plan = await plan_operation(goal["title"], goal["description"], goal["style"], goal["post_freq"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 规划失败: {e}")
+
+    created_posts = []
+    for item in plan.get("weekly_plan", []):
+        scheduled_at = calc_scheduled_time(item["day_offset"], item["hour"], item["minute"])
+        post = await goal_service.create_scheduled_post(
+            goal_id=goal_id,
+            account_id=body.account_id,
+            topic=item["topic"],
+            style=item.get("style", goal["style"]),
+            aspect_ratio=item.get("aspect_ratio", "3:4"),
+            image_count=item.get("image_count", 1),
+            scheduled_at=scheduled_at,
+        )
+        run_time = datetime.strptime(scheduled_at, "%Y-%m-%d %H:%M")
+        schedule_post(post["id"], run_time)
+        created_posts.append(post)
+
+    return {"analysis": plan.get("analysis", ""), "posts": created_posts}
+
+
+@router.get("/goals/{goal_id}/posts")
+async def get_goal_posts(goal_id: int):
+    return await goal_service.list_scheduled_posts(goal_id)
+
+
+@router.get("/posts")
+async def get_all_posts():
+    return await goal_service.list_scheduled_posts()
