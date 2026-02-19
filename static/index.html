@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>小红书 Agent</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff0f3; min-height: 100vh; }
+    header { background: #ff2442; color: #fff; padding: 16px 24px; font-size: 20px; font-weight: 700; letter-spacing: 1px; display: flex; align-items: center; justify-content: space-between; }
+    header a { color: #fff; font-size: 14px; font-weight: 500; cursor: pointer; opacity: .85; text-decoration: none; }
+    header a:hover { opacity: 1; }
+    .container { max-width: 900px; margin: 32px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,.08); margin-bottom: 24px; }
+    label { display: block; font-size: 14px; color: #555; margin-bottom: 6px; font-weight: 500; }
+    input, select, textarea { width: 100%; padding: 10px 14px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 15px; outline: none; transition: border .2s; font-family: inherit; }
+    input:focus, select:focus, textarea:focus { border-color: #ff2442; }
+    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 16px; }
+    .field { margin-top: 16px; }
+    .btn-primary { margin-top: 20px; width: 100%; padding: 14px; background: #ff2442; color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: opacity .2s; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-secondary { margin-top: 16px; width: 100%; padding: 12px; background: #fff; color: #ff2442; border: 2px solid #ff2442; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all .2s; }
+    .btn-secondary:hover { background: #fff0f3; }
+    .btn-secondary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-sm { padding: 5px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; border: none; font-weight: 500; }
+    .btn-danger { background: #fdecea; color: #d32f2f; }
+    .btn-danger:hover { background: #f5c6c6; }
+    .btn-edit { background: #e8f0fe; color: #1a73e8; }
+    .btn-edit:hover { background: #c5d8fc; }
+    .result-title { font-size: 22px; font-weight: 700; color: #1a1a1a; margin-bottom: 12px; }
+    .result-body { font-size: 15px; line-height: 1.8; color: #333; white-space: pre-wrap; }
+    .tags { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag { background: #fff0f3; color: #ff2442; border-radius: 20px; padding: 4px 12px; font-size: 13px; }
+    .images { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
+    .images img { width: 100%; border-radius: 10px; object-fit: cover; aspect-ratio: 3/4; background: #f5f5f5; }
+    .spinner { display: none; text-align: center; padding: 40px; color: #ff2442; font-size: 15px; }
+    .error { color: #d32f2f; background: #fdecea; border-radius: 8px; padding: 12px 16px; margin-top: 16px; font-size: 14px; }
+    .success { color: #2e7d32; background: #e8f5e9; border-radius: 8px; padding: 12px 16px; margin-top: 16px; font-size: 14px; }
+    #resultSection { display: none; }
+    .section-title { font-size: 16px; font-weight: 700; color: #333; margin-bottom: 16px; border-left: 4px solid #ff2442; padding-left: 10px; }
+
+    /* 账号列表 */
+    .account-list { display: flex; flex-direction: column; gap: 10px; }
+    .account-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border: 1px solid #f0f0f0; border-radius: 10px; background: #fafafa; }
+    .account-item.selected { border-color: #ff2442; background: #fff0f3; }
+    .account-info { display: flex; flex-direction: column; gap: 2px; cursor: pointer; flex: 1; }
+    .account-name { font-size: 15px; font-weight: 600; color: #1a1a1a; }
+    .account-meta { font-size: 12px; color: #aaa; }
+    .account-actions { display: flex; gap: 6px; }
+    .empty-hint { text-align: center; color: #bbb; font-size: 14px; padding: 20px 0; }
+    .add-account-toggle { margin-top: 12px; font-size: 14px; color: #ff2442; cursor: pointer; font-weight: 500; }
+    .add-account-toggle:hover { text-decoration: underline; }
+
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.active { display: flex; }
+    .modal { background: #fff; border-radius: 16px; padding: 28px 24px; width: 520px; max-width: 95vw; box-shadow: 0 8px 40px rgba(0,0,0,.18); animation: slideUp .2s ease; max-height: 90vh; overflow-y: auto; }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .modal-title { font-size: 18px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+    .modal-sub { font-size: 13px; color: #888; margin-bottom: 20px; }
+    .modal-hint { font-size: 12px; color: #aaa; margin-top: 6px; line-height: 1.6; }
+    .modal-actions { display: flex; gap: 12px; margin-top: 20px; }
+    .modal-actions button { flex: 1; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; border: none; }
+    .btn-cancel { background: #f5f5f5; color: #555; }
+    .btn-cancel:hover { background: #eee; }
+    .btn-confirm { background: #ff2442; color: #fff; }
+    .btn-confirm:disabled { opacity: .5; cursor: not-allowed; }
+    .divider { border: none; border-top: 1px solid #f0f0f0; margin: 16px 0; }
+    .tab-bar { display: flex; gap: 0; border-bottom: 2px solid #f0f0f0; margin-bottom: 20px; }
+    .tab { padding: 8px 20px; font-size: 14px; font-weight: 600; color: #aaa; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+    .tab.active { color: #ff2442; border-bottom-color: #ff2442; }
+  </style>
+</head>
+<body>
+  <header>
+    🌸 小红书 Agent
+    <a onclick="openAccountManager()">👤 账号管理</a>
+  </header>
+  <div class="container">
+
+    <!-- 生成表单 -->
+    <div class="card">
+      <div class="section-title">内容生成</div>
+      <div class="field">
+        <label>内容主题 *</label>
+        <input id="topic" type="text" placeholder="例如：秋日咖啡馆探店、极简穿搭分享" />
+      </div>
+      <div class="row">
+        <div>
+          <label>内容风格</label>
+          <select id="style">
+            <option>生活方式</option><option>美食探店</option><option>旅行攻略</option>
+            <option>穿搭分享</option><option>护肤美妆</option><option>健身运动</option><option>读书学习</option>
+          </select>
+        </div>
+        <div>
+          <label>图片比例</label>
+          <select id="aspectRatio">
+            <option value="3:4">3:4（推荐）</option><option value="1:1">1:1</option>
+            <option value="4:5">4:5</option><option value="9:16">9:16</option>
+          </select>
+        </div>
+        <div>
+          <label>图片数量</label>
+          <select id="imageCount">
+            <option value="1">1 张</option><option value="2">2 张</option>
+            <option value="3">3 张</option><option value="4">4 张</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn-primary" id="generateBtn" onclick="generate()">✨ 生成内容</button>
+      <div id="genError" class="error" style="display:none"></div>
+    </div>
+
+    <div class="spinner" id="spinner">⏳ 正在生成中，请稍候...</div>
+
+    <!-- 生成结果 -->
+    <div class="card" id="resultSection">
+      <div class="section-title">生成结果</div>
+      <div class="result-title" id="resTitle"></div>
+      <div class="result-body" id="resBody"></div>
+      <div class="tags" id="resTags"></div>
+      <div class="images" id="resImages"></div>
+      <button class="btn-secondary" id="uploadBtn" onclick="openPublishModal()">🚀 发布到小红书</button>
+      <div id="uploadMsg" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- 发布 Modal -->
+  <div class="modal-overlay" id="publishModal" onclick="handleOverlayClick(event,'publishModal')">
+    <div class="modal">
+      <div class="modal-title">发布到小红书</div>
+      <div class="modal-sub">选择账号或临时填写 Cookie</div>
+      <div class="tab-bar">
+        <div class="tab active" id="tab-saved" onclick="switchTab('saved')">已保存账号</div>
+        <div class="tab" id="tab-temp" onclick="switchTab('temp')">临时 Cookie</div>
+      </div>
+
+      <!-- 已保存账号 tab -->
+      <div id="panel-saved">
+        <div class="account-list" id="publishAccountList"></div>
+        <div class="empty-hint" id="publishEmpty" style="display:none">暂无保存的账号，请切换到「临时 Cookie」</div>
+      </div>
+
+      <!-- 临时 Cookie tab -->
+      <div id="panel-temp" style="display:none">
+        <label>Cookie *</label>
+        <textarea id="tempCookie" rows="4" placeholder="粘贴你的小红书 Cookie..."></textarea>
+        <div class="modal-hint">
+          获取方式：打开 <strong>xiaohongshu.com</strong> → F12 → Network →<br>
+          任意请求 → Request Headers → 复制 <strong>cookie</strong> 字段值
+        </div>
+        <div class="field" style="margin-top:12px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="saveCookieCheck" style="width:auto" /> 保存此 Cookie 为账号
+          </label>
+        </div>
+        <div id="saveNameField" style="display:none;margin-top:8px">
+          <input id="saveCookieName" type="text" placeholder="账号备注名称（如：我的小红书）" />
+        </div>
+      </div>
+
+      <div id="publishError" class="error" style="display:none"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModal('publishModal')">取消</button>
+        <button class="btn-confirm" id="publishConfirmBtn" onclick="confirmPublish()">确认发布</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 账号管理 Modal -->
+  <div class="modal-overlay" id="accountModal" onclick="handleOverlayClick(event,'accountModal')">
+    <div class="modal">
+      <div class="modal-title">账号管理</div>
+      <div class="modal-sub">保存的 Cookie 用于一键发布</div>
+      <div class="account-list" id="manageAccountList"></div>
+      <div class="empty-hint" id="manageEmpty" style="display:none">暂无账号，点击下方添加</div>
+      <hr class="divider" />
+      <div class="section-title" style="margin-bottom:12px">添加账号</div>
+      <div class="field" style="margin-top:0">
+        <label>账号名称</label>
+        <input id="newAccountName" type="text" placeholder="例如：我的小红书" />
+      </div>
+      <div class="field">
+        <label>Cookie</label>
+        <textarea id="newAccountCookie" rows="3" placeholder="粘贴小红书 Cookie..."></textarea>
+      </div>
+      <div id="accountError" class="error" style="display:none"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModal('accountModal')">关闭</button>
+        <button class="btn-confirm" onclick="addAccount()">保存账号</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let generatedData = null;
+    let accounts = [];
+    let selectedAccountId = null;
+    let currentTab = 'saved';
+
+    // ── 生成 ──────────────────────────────────────────
+    async function generate() {
+      const topic = document.getElementById('topic').value.trim();
+      if (!topic) { showError('genError', '请输入内容主题'); return; }
+      const btn = document.getElementById('generateBtn');
+      btn.disabled = true;
+      document.getElementById('spinner').style.display = 'block';
+      document.getElementById('resultSection').style.display = 'none';
+      document.getElementById('genError').style.display = 'none';
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            topic, style: document.getElementById('style').value,
+            aspect_ratio: document.getElementById('aspectRatio').value,
+            image_count: parseInt(document.getElementById('imageCount').value),
+          }),
+        });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || '生成失败'); }
+        generatedData = await res.json();
+        renderResult(generatedData);
+      } catch (e) { showError('genError', e.message); }
+      finally { btn.disabled = false; document.getElementById('spinner').style.display = 'none'; }
+    }
+
+    // ── 发布 Modal ────────────────────────────────────
+    async function openPublishModal() {
+      selectedAccountId = null;
+      document.getElementById('publishError').style.display = 'none';
+      document.getElementById('tempCookie').value = '';
+      document.getElementById('saveCookieCheck').checked = false;
+      document.getElementById('saveNameField').style.display = 'none';
+      switchTab('saved');
+      await loadAccountsForPublish();
+      document.getElementById('publishModal').classList.add('active');
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.getElementById('tab-saved').className = 'tab' + (tab === 'saved' ? ' active' : '');
+      document.getElementById('tab-temp').className = 'tab' + (tab === 'temp' ? ' active' : '');
+      document.getElementById('panel-saved').style.display = tab === 'saved' ? '' : 'none';
+      document.getElementById('panel-temp').style.display = tab === 'temp' ? '' : 'none';
+    }
+
+    document.getElementById('saveCookieCheck').addEventListener('change', function() {
+      document.getElementById('saveNameField').style.display = this.checked ? '' : 'none';
+    });
+
+    async function loadAccountsForPublish() {
+      accounts = await fetchAccounts();
+      const list = document.getElementById('publishAccountList');
+      const empty = document.getElementById('publishEmpty');
+      if (!accounts.length) { list.innerHTML = ''; empty.style.display = ''; return; }
+      empty.style.display = 'none';
+      list.innerHTML = accounts.map(a => `
+        <div class="account-item" id="pub-acc-${a.id}" onclick="selectAccount('${a.id}')">
+          <div class="account-info">
+            <div class="account-name">${a.name}</div>
+            <div class="account-meta">添加于 ${a.created_at} · ${a.cookie_preview}</div>
+          </div>
+          <span style="font-size:18px;display:none" id="check-${a.id}">✅</span>
+        </div>`).join('');
+    }
+
+    function selectAccount(id) {
+      accounts.forEach(a => {
+        document.getElementById(`pub-acc-${a.id}`)?.classList.remove('selected');
+        document.getElementById(`check-${a.id}`).style.display = 'none';
+      });
+      selectedAccountId = id;
+      document.getElementById(`pub-acc-${id}`)?.classList.add('selected');
+      document.getElementById(`check-${id}`).style.display = '';
+    }
+
+    async function confirmPublish() {
+      document.getElementById('publishError').style.display = 'none';
+      const btn = document.getElementById('publishConfirmBtn');
+
+      let payload = {};
+      if (currentTab === 'saved') {
+        if (!selectedAccountId) { showError('publishError', '请选择一个账号'); return; }
+        payload.account_id = selectedAccountId;
+      } else {
+        const cookie = document.getElementById('tempCookie').value.trim();
+        if (!cookie) { showError('publishError', '请填写 Cookie'); return; }
+        payload.cookie = cookie;
+        // 如果勾选了保存
+        if (document.getElementById('saveCookieCheck').checked) {
+          const name = document.getElementById('saveCookieName').value.trim() || '未命名账号';
+          await fetch('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, cookie }) });
+        }
+      }
+
+      const imageUrls = generatedData.images
+        .map(img => img.url || (img.b64_json ? `data:image/png;base64,${img.b64_json}` : null))
+        .filter(Boolean);
+      const desc = generatedData.content.body + '\n\n' +
+        generatedData.content.hashtags.map(t => '#' + t).join(' ');
+
+      btn.disabled = true; btn.textContent = '发布中...';
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, title: generatedData.content.title, desc, image_urls: imageUrls, hashtags: generatedData.content.hashtags }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '发布失败');
+        closeModal('publishModal');
+        showMsg('uploadMsg', 'success', `✅ 发布成功！笔记 ID: ${data.note_id || '已提交'}`);
+      } catch (e) { showError('publishError', e.message); }
+      finally { btn.disabled = false; btn.textContent = '确认发布'; }
+    }
+
+    // ── 账号管理 Modal ────────────────────────────────
+    async function openAccountManager() {
+      document.getElementById('newAccountName').value = '';
+      document.getElementById('newAccountCookie').value = '';
+      document.getElementById('accountError').style.display = 'none';
+      await renderManageList();
+      document.getElementById('accountModal').classList.add('active');
+    }
+
+    async function fetchAccounts() {
+      const res = await fetch('/api/accounts');
+      return res.ok ? res.json() : [];
+    }
+
+    async function renderManageList() {
+      const list = await fetchAccounts();
+      const el = document.getElementById('manageAccountList');
+      const empty = document.getElementById('manageEmpty');
+      if (!list.length) { el.innerHTML = ''; empty.style.display = ''; return; }
+      empty.style.display = 'none';
+      el.innerHTML = list.map(a => `
+        <div class="account-item">
+          <div class="account-info">
+            <div class="account-name">${a.name}</div>
+            <div class="account-meta">添加于 ${a.created_at} · ${a.cookie_preview}</div>
+          </div>
+          <div class="account-actions">
+            <button class="btn-sm btn-danger" onclick="deleteAccount('${a.id}')">删除</button>
+          </div>
+        </div>`).join('');
+    }
+
+    async function addAccount() {
+      const name = document.getElementById('newAccountName').value.trim();
+      const cookie = document.getElementById('newAccountCookie').value.trim();
+      if (!name) { showError('accountError', '请填写账号名称'); return; }
+      if (!cookie) { showError('accountError', '请填写 Cookie'); return; }
+      const res = await fetch('/api/accounts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, cookie }),
+      });
+      if (!res.ok) { showError('accountError', '保存失败'); return; }
+      document.getElementById('newAccountName').value = '';
+      document.getElementById('newAccountCookie').value = '';
+      document.getElementById('accountError').style.display = 'none';
+      await renderManageList();
+    }
+
+    async function deleteAccount(id) {
+      if (!confirm('确认删除该账号？')) return;
+      await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+      await renderManageList();
+    }
+
+    // ── 通用 ──────────────────────────────────────────
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+    function handleOverlayClick(e, id) { if (e.target === document.getElementById(id)) closeModal(id); }
+
+    function renderResult(data) {
+      document.getElementById('resTitle').textContent = data.content.title;
+      document.getElementById('resBody').textContent = data.content.body;
+      document.getElementById('resTags').innerHTML = data.content.hashtags.map(t => `<span class="tag">#${t}</span>`).join('');
+      document.getElementById('resImages').innerHTML = data.images.map(img => {
+        const src = img.url || (img.b64_json ? `data:image/png;base64,${img.b64_json}` : '');
+        return src ? `<img src="${src}" alt="生成图片" />` : '';
+      }).join('');
+      document.getElementById('uploadMsg').style.display = 'none';
+      document.getElementById('resultSection').style.display = 'block';
+    }
+
+    function showError(id, msg) {
+      const el = document.getElementById(id);
+      el.textContent = '❌ ' + msg; el.className = 'error'; el.style.display = 'block';
+    }
+    function showMsg(id, type, msg) {
+      const el = document.getElementById(id);
+      el.className = type === 'success' ? 'success' : 'error';
+      el.textContent = msg; el.style.display = 'block';
+    }
+  </script>
+</body>
+</html>

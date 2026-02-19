@@ -1,0 +1,4 @@
+- [2026-02-19 03:00] FEAT: 账号管理功能，支持保存/删除 Cookie，发布时可选已保存账号或临时 Cookie (Files: src/xhs_agent/services/account_service.py, src/xhs_agent/api/router.py, static/index.html, doc/API.md)
+- [2026-02-19 02:00] FEAT: 优化图片提示词生成规则，要求中文文字入图、真实感、网感 (Files: src/xhs_agent/services/text_service.py)
+- [2026-02-19 01:00] FEAT: 添加 API 请求日志中间件、小红书自动上传功能及前端一键发布按钮 (Files: main.py, src/xhs_agent/middleware.py, src/xhs_agent/services/upload_service.py, src/xhs_agent/api/router.py, static/index.html, utils/stealth.min.js, doc/API.md)
+- [2026-02-19 00:00] FEAT: 初始化小红书 Agent 项目，实现文本+图片生成完整流程 (Files: main.py, pyproject.toml, .env.example, src/xhs_agent/config.py, src/xhs_agent/api/schemas.py, src/xhs_agent/api/router.py, src/xhs_agent/services/text_service.py, src/xhs_agent/services/image_service.py, src/xhs_agent/agent/xhs_agent.py, static/index.html, doc/API.md)
