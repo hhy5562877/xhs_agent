@@ -43,12 +43,12 @@ weekly_plan 包含未来7天的发布计划，每天1-2条，时间要符合最�
 """
 
 
-async def fetch_account_stats(cookie: str) -> dict:
+async def fetch_account_stats(cookie: str, user_id: str = "") -> dict:
     """异步获取账号近期笔记统计数据"""
     try:
         stats, notes = await asyncio.gather(
             asyncio.to_thread(_get_stats, cookie),
-            asyncio.to_thread(_get_recent_notes, cookie),
+            asyncio.to_thread(_get_recent_notes, cookie, user_id),
             return_exceptions=True,
         )
         return {
@@ -65,9 +65,9 @@ def _get_stats(cookie: str) -> list:
     return get_notes_statistics(cookie, time=30)
 
 
-def _get_recent_notes(cookie: str) -> list:
+def _get_recent_notes(cookie: str, user_id: str = "") -> list:
     from ..services.upload_service import get_user_recent_notes
-    return get_user_recent_notes(cookie)
+    return get_user_recent_notes(cookie, user_id=user_id)
 
 
 def _summarize_stats(account_data: dict) -> str:
@@ -76,17 +76,31 @@ def _summarize_stats(account_data: dict) -> str:
     notes = account_data.get("recent_notes", [])
     if notes:
         lines.append(f"近期发布笔记数：{len(notes)}")
-        # 取前5篇，展示互动数据
-        for n in notes[:5]:
-            info = n.get("interact_info", {})
+        total_likes = sum(int(n.get("liked_count") or 0) for n in notes)
+        total_collect = sum(int(n.get("collected_count") or 0) for n in notes)
+        total_comment = sum(int(n.get("comment_count") or 0) for n in notes)
+        lines.append(f"累计点赞：{total_likes}  收藏：{total_collect}  评论：{total_comment}")
+        sorted_notes = sorted(notes, key=lambda n: int(n.get("liked_count") or 0) + int(n.get("collected_count") or 0), reverse=True)
+        lines.append("表现最好的笔记（按点赞+收藏）：")
+        for n in sorted_notes[:5]:
             lines.append(
-                f"- 《{n.get('display_title', '无标题')}》"
-                f" 点赞:{info.get('liked_count','?')} 收藏:{info.get('collected_count','?')} 评论:{info.get('comment_count','?')}"
+                f"  - 《{n.get('title') or '无标题'}》[{n.get('type','')}]"
+                f" 点赞:{n.get('liked_count',0)} 收藏:{n.get('collected_count',0)}"
+                f" 评论:{n.get('comment_count',0)} 分享:{n.get('share_count',0)}"
             )
+        lines.append("所有笔记列表：")
+        for n in notes:
+            lines.append(
+                f"  - 《{n.get('title') or '无标题'}》"
+                f" 点赞:{n.get('liked_count',0)} 收藏:{n.get('collected_count',0)} 评论:{n.get('comment_count',0)}"
+            )
+    else:
+        lines.append("注意：本次因小红书验证码拦截，无法获取历史笔记数据，请根据运营目标和平台规律制定计划。")
+
     stats = account_data.get("stats", [])
     if isinstance(stats, list) and stats:
         lines.append(f"近30天笔记统计条数：{len(stats)}")
-    return "\n".join(lines) if lines else "暂无历史数据"
+    return "\n".join(lines)
 
 
 async def plan_operation(
@@ -95,10 +109,10 @@ async def plan_operation(
     style: str,
     post_freq: int,
     cookie: str,
+    user_id: str = "",
 ) -> dict:
     """调用总管 AI 分析运营目标 + 账号历史数据，生成发布计划"""
-    # 并发获取账号数据
-    account_data = await fetch_account_stats(cookie)
+    account_data = await fetch_account_stats(cookie, user_id=user_id)
     stats_summary = _summarize_stats(account_data)
 
     user_prompt = (
@@ -119,21 +133,25 @@ async def plan_operation(
                 "Content-Type": "application/json",
             },
             json={
-                "model": "gpt-5.2",
+                "model": "claude-opus-4-6",
                 "messages": [
                     {"role": "system", "content": MANAGER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
                 "temperature": 0.7,
                 "max_tokens": 3000,
-                "response_format": {"type": "json_object"},
             },
         )
         response.raise_for_status()
 
     data = response.json()
     raw = data["choices"][0]["message"]["content"]
-    return json.loads(raw)
+    logger.info(f"[Manager AI 输出]\n{raw}")
+    # 提取 JSON 块（模型可能在 ```json ... ``` 中返回）
+    import re
+    match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', raw)
+    json_str = match.group(1) if match else raw.strip()
+    return json.loads(json_str)
 
 
 def calc_scheduled_time(day_offset: int, hour: int, minute: int) -> str:

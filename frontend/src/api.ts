@@ -29,9 +29,20 @@ export const createGoal = (body: Omit<Goal, 'id' | 'active' | 'created_at'>) => 
 export const deleteGoal = (id: number) => fetch(`${BASE}/goals/${id}`, { method: 'DELETE' })
 export const toggleGoal = (id: number, active: boolean) =>
   req(`/goals/${id}/toggle?active=${active}`, { method: 'PATCH' })
+export const updateGoal = (id: number, body: Omit<Goal, 'id' | 'active' | 'created_at'>) =>
+  req(`/goals/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 
 export const planGoal = (goal_id: number) =>
   req<PlanResult>(`/goals/${goal_id}/plan`, { method: 'POST' })
 
 export const getGoalPosts = (goal_id: number) => req<ScheduledPost[]>(`/goals/${goal_id}/posts`)
 export const getAllPosts = () => req<ScheduledPost[]>('/posts')
+export const runPostNow = (id: number) => req(`/posts/${id}/run`, { method: 'POST' })
+
+export const updateAccountCookie = (id: string, cookie: string) =>
+  req(`/accounts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cookie }) })
+
+export const startBrowser = (account_id: string) => post('/browser/start', { account_id })
+export const stopBrowser = () => req('/browser/stop', { method: 'POST' })
+export const getBrowserStatus = () => req<{ status: string; request_count: number }>('/browser/status')
+export const getBrowserRequests = () => req<Array<Record<string, unknown>>>('/browser/requests')

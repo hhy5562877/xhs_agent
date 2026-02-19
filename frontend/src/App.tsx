@@ -7,14 +7,15 @@ import {
 } from 'antd'
 import {
   StarOutlined, RocketOutlined, UserOutlined, PlusOutlined,
-  DeleteOutlined, CheckCircleFilled, LoadingOutlined,
+  DeleteOutlined, CheckCircleFilled, LoadingOutlined, EditOutlined,
   PictureOutlined, FileTextOutlined, TeamOutlined,
   BarChartOutlined, CalendarOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
 import type { GenerateResponse, Account, AccountPreview, Goal, ScheduledPost } from './types'
 import {
   generateContent, uploadNote, getAccounts, previewAccount, createAccount, deleteAccount,
-  getGoals, createGoal, deleteGoal, planGoal, getGoalPosts,
+  getGoals, createGoal, deleteGoal, updateGoal, planGoal, getGoalPosts, runPostNow, updateAccountCookie,
+  startBrowser, stopBrowser, getBrowserStatus,
 } from './api'
 
 const { Header, Content } = Layout
@@ -22,6 +23,7 @@ const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
 
 const STYLES = ['生活方式', '美食探店', '旅行攻略', '穿搭分享', '护肤美妆', '健身运动', '读书学习']
+const avatarSrc = (url: string) => url ? `/api/proxy/image?url=${encodeURIComponent(url)}` : ''
 const RATIOS = [
   { label: '3:4（推荐）', value: '3:4' },
   { label: '1:1', value: '1:1' },
@@ -61,11 +63,21 @@ export default function App() {
   const [addingAccount, setAddingAccount] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [previewInfo, setPreviewInfo] = useState<AccountPreview | null>(null)
+  const [updateCookieTarget, setUpdateCookieTarget] = useState<Account | null>(null)
+  const [updateCookieVal, setUpdateCookieVal] = useState('')
+  const [updatingCookie, setUpdatingCookie] = useState(false)
+  const [runningPostIds, setRunningPostIds] = useState<Set<number>>(new Set())
+  const [browserStatus, setBrowserStatus] = useState<string>('stopped')
+  const [browserReqCount, setBrowserReqCount] = useState(0)
+  const [startingBrowser, setStartingBrowser] = useState(false)
 
   // operation goals
   const [goals, setGoals] = useState<Goal[]>([])
   const [goalOpen, setGoalOpen] = useState(false)
   const [addingGoal, setAddingGoal] = useState(false)
+  const [editGoalTarget, setEditGoalTarget] = useState<Goal | null>(null)
+  const [editGoalForm] = Form.useForm()
+  const [savingGoal, setSavingGoal] = useState(false)
   const [planningGoalId, setPlanningGoalId] = useState<number | null>(null)
   // planAccountId removed - goal is bound to account at creation
   const [planOpen, setPlanOpen] = useState(false)
@@ -124,10 +136,6 @@ export default function App() {
   }
 
   // ── 账号管理 ──────────────────────────────────────────
-  async function openAccountManager() {
-    setAccounts(await getAccounts()); setNewName(''); setNewCookie('')
-    setPreviewInfo(null); setAccountOpen(true)
-  }
 
   async function onPreviewCookie() {
     if (!newCookie.trim()) { msgApi.warning('请先粘贴 Cookie'); return }
@@ -157,6 +165,50 @@ export default function App() {
     msgApi.success('已删除')
   }
 
+  async function onUpdateCookie() {
+    if (!updateCookieTarget || !updateCookieVal.trim()) return
+    setUpdatingCookie(true)
+    try {
+      await updateAccountCookie(updateCookieTarget.id, updateCookieVal.trim())
+      setAccounts(await getAccounts())
+      setUpdateCookieTarget(null); setUpdateCookieVal('')
+      msgApi.success('Cookie 已更新')
+    } catch (e: unknown) { msgApi.error((e as Error).message) }
+    finally { setUpdatingCookie(false) }
+  }
+
+  async function onRunPostNow(postId: number) {
+    setRunningPostIds(prev => new Set(prev).add(postId))
+    try {
+      await runPostNow(postId)
+      msgApi.success('已开始发布，请稍后刷新查看状态')
+      // 刷新排期列表
+      const goalId = posts.find(p => p.id === postId)?.goal_id
+      if (goalId) setPosts(await getGoalPosts(goalId))
+    } catch (e: unknown) { msgApi.error((e as Error).message) }
+    finally { setRunningPostIds(prev => { const s = new Set(prev); s.delete(postId); return s }) }
+  }
+
+  async function onStartBrowser(accountId: string) {
+    setStartingBrowser(true)
+    try {
+      await startBrowser(accountId)
+      msgApi.success('浏览器启动中，请稍候...')
+      // 轮询状态
+      const poll = setInterval(async () => {
+        const s = await getBrowserStatus()
+        setBrowserStatus(s.status); setBrowserReqCount(s.request_count)
+        if (s.status === 'stopped') clearInterval(poll)
+      }, 2000)
+    } catch (e: unknown) { msgApi.error((e as Error).message) }
+    finally { setStartingBrowser(false) }
+  }
+
+  async function onStopBrowser() {
+    await stopBrowser(); setBrowserStatus('stopped'); setBrowserReqCount(0)
+    msgApi.success('浏览器已关闭')
+  }
+
   // ── 运营目标 ──────────────────────────────────────────
   async function loadGoals() { setGoals(await getGoals()) }
 
@@ -180,13 +232,36 @@ export default function App() {
     await deleteGoal(id); await loadGoals(); msgApi.success('已删除')
   }
 
+  function openEditGoal(goal: Goal) {
+    setEditGoalTarget(goal)
+    editGoalForm.setFieldsValue({ title: goal.title, description: goal.description, style: goal.style, post_freq: goal.post_freq, account_id: goal.account_id })
+    if (accounts.length === 0) getAccounts().then(setAccounts)
+  }
+
+  async function onSaveGoal(values: Record<string, unknown>) {
+    if (!editGoalTarget) return
+    setSavingGoal(true)
+    try {
+      await updateGoal(editGoalTarget.id, {
+        title: values.title as string,
+        description: values.description as string,
+        style: values.style as string,
+        post_freq: values.post_freq as number,
+        account_id: values.account_id as string,
+      })
+      await loadGoals(); setEditGoalTarget(null)
+      msgApi.success('目标已更新')
+    } catch (e: unknown) { msgApi.error((e as Error).message) }
+    finally { setSavingGoal(false) }
+  }
+
   async function openPlanModal(goal: Goal) {
     setPlanGoalTarget(goal); setPlanAnalysis('')
     setPlanOpen(true)
   }
 
   async function onPlan() {
-    if (!planGoalTarget) return
+    if (!planGoalTarget || planningGoalId !== null) return
     setPlanningGoalId(planGoalTarget.id)
     try {
       const res = await planGoal(planGoalTarget.id)
@@ -228,23 +303,18 @@ export default function App() {
           <span style={{ fontSize: 22 }}>🌸</span>
           <Title level={4} style={{ color: '#fff', margin: 0, letterSpacing: 1 }}>小红书 Agent</Title>
         </Space>
-        <Space>
-          <Button icon={<BarChartOutlined />} onClick={() => { setActiveTab('operation'); openGoalManager() }}
-            style={{ background: 'rgba(255,255,255,.15)', border: 'none', color: '#fff' }} ghost>
-            运营管理
-          </Button>
-          <Button icon={<TeamOutlined />} onClick={openAccountManager}
-            style={{ background: 'rgba(255,255,255,.15)', border: 'none', color: '#fff' }} ghost>
-            账号管理
-          </Button>
-        </Space>
       </Header>
 
       <Content style={{ maxWidth: 960, margin: '32px auto', padding: '0 16px', width: '100%' }}>
-        <Tabs activeKey={activeTab} onChange={setActiveTab} size="large"
+        <Tabs activeKey={activeTab} onChange={key => {
+          setActiveTab(key)
+          if (key === 'operation') { loadGoals(); getAccounts().then(setAccounts) }
+          if (key === 'accounts') getAccounts().then(setAccounts)
+        }} size="large"
           items={[
             { key: 'generate', label: <Space><FileTextOutlined />内容生成</Space>, children: null },
             { key: 'operation', label: <Space><BarChartOutlined />运营管理</Space>, children: null },
+            { key: 'accounts', label: <Space><TeamOutlined />账号管理</Space>, children: null },
           ]}
           style={{ marginBottom: 24 }}
         />
@@ -353,6 +423,7 @@ export default function App() {
                     <List.Item
                       style={{ borderRadius: 12, padding: '14px 16px', marginBottom: 10, border: '1px solid #f0f0f0', background: '#fafafa' }}
                       actions={[
+                        <Button key="edit" size="small" icon={<EditOutlined />} onClick={() => openEditGoal(goal)}>编辑</Button>,
                         <Button key="posts" size="small" icon={<CalendarOutlined />} onClick={() => openPosts(goal)}>排期</Button>,
                         <Button key="plan" size="small" type="primary" icon={<ThunderboltOutlined />}
                           loading={planningGoalId === goal.id} onClick={() => openPlanModal(goal)}
@@ -371,6 +442,79 @@ export default function App() {
                   )} />
                 )
               }
+            </Card>
+          </div>
+        )}
+
+        {/* ── 账号管理 Tab ── */}
+        {activeTab === 'accounts' && (
+          <div className="fade-in-up">
+            <Card style={{ borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,.06)', border: 'none' }}
+              styles={{ body: { padding: 28 } }}
+              title={<Space><TeamOutlined style={{ color: '#ff2442' }} /><span>账号管理</span></Space>}
+            >
+              {accounts.length === 0
+                ? <Empty description="暂无账号" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
+                : <List dataSource={accounts} renderItem={acc => (
+                    <List.Item style={{ borderRadius: 10, padding: '10px 14px', marginBottom: 8, border: '1px solid #f0f0f0', background: '#fafafa' }}
+                      actions={[
+                        <Button key="cookie" size="small" icon={<EditOutlined />} onClick={() => { setUpdateCookieTarget(acc); setUpdateCookieVal('') }}>更新Cookie</Button>,
+                        <Popconfirm key="del" title="确认删除？" onConfirm={() => onDeleteAccount(acc.id)} okText="删除" okButtonProps={{ danger: true }}>
+                          <Button danger size="small" icon={<DeleteOutlined />}>删除</Button>
+                        </Popconfirm>,
+                      ]}>
+                      <List.Item.Meta
+                        avatar={acc.avatar_url
+                          ? <Avatar src={avatarSrc(acc.avatar_url)} size={40} />
+                          : <Avatar icon={<UserOutlined />} size={40} style={{ background: '#ff2442' }} />}
+                        title={<Space size={6}><Text strong>{acc.nickname || acc.name}</Text>{acc.fans && <Text type="secondary" style={{ fontSize: 12 }}>粉丝 {acc.fans}</Text>}</Space>}
+                        description={<Text type="secondary" style={{ fontSize: 12 }}>{acc.created_at} · {acc.cookie_preview}</Text>}
+                      />
+                    </List.Item>
+                  )} />
+              }
+              <Divider>添加账号</Divider>
+              <Space direction="vertical" style={{ width: '100%' }} size={10}>
+                <TextArea rows={3} value={newCookie} onChange={e => { setNewCookie(e.target.value); setPreviewInfo(null) }} placeholder="粘贴小红书 Cookie..." />
+                <Button block icon={<UserOutlined />} loading={previewing} onClick={onPreviewCookie}>验证 Cookie</Button>
+                {previewInfo && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, background: '#fff7f8', border: '1px solid #ffd6dc' }}>
+                    {previewInfo.avatar_url
+                      ? <Avatar src={avatarSrc(previewInfo.avatar_url)} size={48} />
+                      : <Avatar icon={<UserOutlined />} size={48} style={{ background: '#ff2442' }} />}
+                    <div>
+                      <Text strong style={{ fontSize: 15 }}>{previewInfo.nickname}</Text>
+                      {previewInfo.fans && <div><Text type="secondary" style={{ fontSize: 12 }}>粉丝 {previewInfo.fans}</Text></div>}
+                    </div>
+                  </div>
+                )}
+                <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="账号备注名（可选，默认用昵称）" prefix={<UserOutlined style={{ color: '#ccc' }} />} />
+                <Button type="primary" block icon={<PlusOutlined />} loading={addingAccount} onClick={onAddAccount} style={primaryBtnStyle}>保存账号</Button>
+              </Space>
+              <Divider>调试工具</Divider>
+              <Alert type="info" showIcon style={{ marginBottom: 12 }}
+                message="Playwright 浏览器调试"
+                description="遇到验证码时，选择账号启动可视化浏览器，手动完成验证后请求将自动恢复。所有请求会被记录到 log/browser_requests/ 目录。" />
+              <Space wrap>
+                {accounts.map(acc => (
+                  <Button key={acc.id} icon={<TeamOutlined />}
+                    loading={startingBrowser} disabled={browserStatus === 'running'}
+                    onClick={() => onStartBrowser(acc.id)}>
+                    启动浏览器（{acc.nickname || acc.name}）
+                  </Button>
+                ))}
+                {browserStatus === 'running' && (
+                  <Button danger icon={<DeleteOutlined />} onClick={onStopBrowser}>关闭浏览器</Button>
+                )}
+              </Space>
+              {browserStatus !== 'stopped' && (
+                <div style={{ marginTop: 10 }}>
+                  <Tag color={browserStatus === 'running' ? 'green' : 'orange'}>
+                    {browserStatus === 'running' ? '运行中' : '启动中'}
+                  </Tag>
+                  <Text type="secondary" style={{ fontSize: 12 }}>已拦截 {browserReqCount} 条请求</Text>
+                </div>
+              )}
             </Card>
           </div>
         )}
@@ -424,13 +568,14 @@ export default function App() {
           : <List dataSource={accounts} renderItem={acc => (
               <List.Item style={{ borderRadius: 10, padding: '10px 14px', marginBottom: 8, border: '1px solid #f0f0f0', background: '#fafafa' }}
                 actions={[
+                  <Button key="cookie" size="small" icon={<EditOutlined />} onClick={() => { setUpdateCookieTarget(acc); setUpdateCookieVal('') }}>更新Cookie</Button>,
                   <Popconfirm key="del" title="确认删除？" onConfirm={() => onDeleteAccount(acc.id)} okText="删除" okButtonProps={{ danger: true }}>
                     <Button danger size="small" icon={<DeleteOutlined />}>删除</Button>
                   </Popconfirm>,
                 ]}>
                 <List.Item.Meta
                   avatar={acc.avatar_url
-                    ? <Avatar src={acc.avatar_url} size={40} />
+                    ? <Avatar src={avatarSrc(acc.avatar_url)} size={40} />
                     : <Avatar icon={<UserOutlined />} size={40} style={{ background: '#ff2442' }} />}
                   title={<Space size={6}><Text strong>{acc.nickname || acc.name}</Text>{acc.fans && <Text type="secondary" style={{ fontSize: 12 }}>粉丝 {acc.fans}</Text>}</Space>}
                   description={<Text type="secondary" style={{ fontSize: 12 }}>{acc.created_at} · {acc.cookie_preview}</Text>}
@@ -445,7 +590,7 @@ export default function App() {
           {previewInfo && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, background: '#fff7f8', border: '1px solid #ffd6dc' }}>
               {previewInfo.avatar_url
-                ? <Avatar src={previewInfo.avatar_url} size={48} />
+                ? <Avatar src={avatarSrc(previewInfo.avatar_url)} size={48} />
                 : <Avatar icon={<UserOutlined />} size={48} style={{ background: '#ff2442' }} />}
               <div>
                 <Text strong style={{ fontSize: 15 }}>{previewInfo.nickname}</Text>
@@ -517,15 +662,73 @@ export default function App() {
           columns={[
             { title: '发布时间', dataIndex: 'scheduled_at', width: 140 },
             { title: '主题', dataIndex: 'topic', ellipsis: true },
-            { title: '风格', dataIndex: 'style', width: 90 },
-            { title: '图片', dataIndex: 'image_count', width: 60, render: (n: number) => `${n}张` },
+            { title: '风格', dataIndex: 'style', width: 90, ellipsis: true },
+            { title: '图片', dataIndex: 'image_count', width: 55, render: (n: number) => `${n}张` },
             {
               title: '状态', dataIndex: 'status', width: 80,
               render: (s: string) => <Badge color={STATUS_MAP[s]?.color} text={STATUS_MAP[s]?.text} />,
             },
-            { title: '笔记ID', dataIndex: 'note_id', width: 120, render: (v: string) => v || '-' },
+            { title: '笔记ID', dataIndex: 'note_id', width: 110, render: (v: string) => v || '-' },
+            {
+              title: '操作', width: 100, render: (_: unknown, record: ScheduledPost) =>
+                (record.status === 'pending' || record.status === 'failed') ? (
+                  <Button size="small" type="primary" icon={<RocketOutlined />}
+                    loading={runningPostIds.has(record.id)}
+                    onClick={() => onRunPostNow(record.id)}
+                    style={{ background: '#ff2442', borderColor: '#ff2442' }}>
+                    立即发布
+                  </Button>
+                ) : null,
+            },
           ]}
         />
+      </Modal>
+
+      {/* 更新 Cookie Modal */}
+      <Modal title={<Space><EditOutlined style={{ color: '#ff2442' }} /><span>更新 Cookie</span></Space>}
+        open={!!updateCookieTarget} onCancel={() => setUpdateCookieTarget(null)} footer={null} width={480}>
+        {updateCookieTarget && (
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {updateCookieTarget.avatar_url
+                ? <Avatar src={avatarSrc(updateCookieTarget.avatar_url)} size={40} />
+                : <Avatar icon={<UserOutlined />} size={40} style={{ background: '#ff2442' }} />}
+              <Text strong>{updateCookieTarget.nickname || updateCookieTarget.name}</Text>
+            </div>
+            <TextArea rows={4} value={updateCookieVal} onChange={e => setUpdateCookieVal(e.target.value)} placeholder="粘贴新的小红书 Cookie..." />
+            <Button type="primary" block loading={updatingCookie} onClick={onUpdateCookie} style={primaryBtnStyle}>保存新 Cookie</Button>
+          </Space>
+        )}
+      </Modal>
+
+      {/* 编辑运营目标 Modal */}
+      <Modal title={<Space><EditOutlined style={{ color: '#ff2442' }} /><span>编辑运营目标</span></Space>}
+        open={!!editGoalTarget} onCancel={() => setEditGoalTarget(null)} footer={null} width={540}>
+        <Form form={editGoalForm} onFinish={onSaveGoal} layout="vertical">
+          <Form.Item name="account_id" label="绑定账号" rules={[{ required: true, message: '请选择账号' }]}>
+            <Select placeholder="选择该目标使用的小红书账号"
+              options={accounts.map(a => ({ label: a.nickname || a.name, value: a.id }))} />
+          </Form.Item>
+          <Form.Item name="title" label="目标名称" rules={[{ required: true }]}>
+            <Input placeholder="例如：咖啡品牌推广、个人IP打造" />
+          </Form.Item>
+          <Form.Item name="description" label="运营目标描述" rules={[{ required: true }]}>
+            <TextArea rows={3} placeholder="详细描述你的运营目标、目标受众、核心卖点等..." />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={14}>
+              <Form.Item name="style" label="主要内容风格">
+                <Select options={STYLES.map(s => ({ label: s, value: s }))} />
+              </Form.Item>
+            </Col>
+            <Col span={10}>
+              <Form.Item name="post_freq" label="每日发布频率">
+                <InputNumber min={1} max={3} style={{ width: '100%' }} addonAfter="篇/天" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Button type="primary" htmlType="submit" block loading={savingGoal} style={primaryBtnStyle}>保存修改</Button>
+        </Form>
       </Modal>
     </Layout>
   )

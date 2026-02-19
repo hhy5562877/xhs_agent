@@ -3,14 +3,16 @@ import logging
 import os
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
+import httpx
 from ..api.schemas import GenerateRequest, GenerateResponse
 from ..agent.xhs_agent import run
 from ..services.upload_service import download_image_to_tmp, upload_image_note
 from ..services import account_service
 from ..services import goal_service
 from ..services.manager_service import plan_operation, calc_scheduled_time
-from ..services.scheduler_service import schedule_post
+from ..services.scheduler_service import schedule_post, scheduler
 
 logger = logging.getLogger("xhs_agent")
 router = APIRouter(prefix="/api", tags=["xhs"])
@@ -152,43 +154,84 @@ async def toggle_goal(goal_id: int, active: bool):
     return {"ok": True}
 
 
+class GoalUpdate(BaseModel):
+    title: str
+    description: str
+    style: str
+    post_freq: int
+    account_id: str
+
+
+@router.patch("/goals/{goal_id}")
+async def update_goal(goal_id: int, body: GoalUpdate):
+    if not await goal_service.update_goal(goal_id, body.title, body.description, body.style, body.post_freq, body.account_id):
+        raise HTTPException(status_code=404, detail="目标不存在")
+    return {"ok": True}
+
+
 # ── AI 规划 + 排期 ────────────────────────────────────
+import asyncio as _asyncio
+_plan_locks: dict[int, _asyncio.Lock] = {}
+
+def _get_plan_lock(goal_id: int) -> _asyncio.Lock:
+    if goal_id not in _plan_locks:
+        _plan_locks[goal_id] = _asyncio.Lock()
+    return _plan_locks[goal_id]
+
 @router.post("/goals/{goal_id}/plan")
 async def plan_goal(goal_id: int):
     """让总管 AI 分析目标（使用目标绑定的账号），生成并保存7天发布计划"""
-    goal = await goal_service.get_goal(goal_id)
-    if not goal:
-        raise HTTPException(status_code=404, detail="目标不存在")
+    lock = _get_plan_lock(goal_id)
+    if lock.locked():
+        raise HTTPException(status_code=429, detail="规划进行中，请勿重复提交")
+    async with lock:
+        goal = await goal_service.get_goal(goal_id)
+        if not goal:
+            raise HTTPException(status_code=404, detail="目标不存在")
 
-    account_id = goal["account_id"]
-    cookie = await account_service.get_cookie(account_id)
-    if not cookie:
-        raise HTTPException(status_code=404, detail="账号不存在或 Cookie 已失效")
+        account_id = goal["account_id"]
+        cookie = await account_service.get_cookie(account_id)
+        if not cookie:
+            raise HTTPException(status_code=404, detail="账号不存在或 Cookie 已失效")
 
-    try:
-        plan = await plan_operation(
-            goal["title"], goal["description"], goal["style"], goal["post_freq"], cookie
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI 规划失败: {e}")
+        accounts = await account_service.list_accounts()
+        xhs_user_id = next((a["xhs_user_id"] for a in accounts if a["id"] == account_id), "")
 
-    created_posts = []
-    for item in plan.get("weekly_plan", []):
-        scheduled_at = calc_scheduled_time(item["day_offset"], item["hour"], item["minute"])
-        post = await goal_service.create_scheduled_post(
-            goal_id=goal_id,
-            account_id=account_id,
-            topic=item["topic"],
-            style=item.get("style", goal["style"]),
-            aspect_ratio=item.get("aspect_ratio", "3:4"),
-            image_count=item.get("image_count", 1),
-            scheduled_at=scheduled_at,
-        )
-        run_time = datetime.strptime(scheduled_at, "%Y-%m-%d %H:%M")
-        schedule_post(post["id"], run_time)
-        created_posts.append(post)
+        try:
+            plan = await plan_operation(
+                goal["title"], goal["description"], goal["style"], goal["post_freq"], cookie, user_id=xhs_user_id
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"AI 规划失败: {e}")
 
-    return {"analysis": plan.get("analysis", ""), "posts": created_posts}
+        # 清除旧的 pending 排期（取消调度器中对应 job）
+        old_posts = await goal_service.list_scheduled_posts(goal_id)
+        for p in old_posts:
+            if p["status"] == "pending":
+                job_id = f"post_{p['id']}"
+                if scheduler.get_job(job_id):
+                    scheduler.remove_job(job_id)
+        deleted = await goal_service.delete_pending_posts(goal_id)
+        if deleted:
+            logger.info(f"已清除目标 #{goal_id} 的 {deleted} 条旧 pending 排期")
+
+        created_posts = []
+        for item in plan.get("weekly_plan", []):
+            scheduled_at = calc_scheduled_time(item["day_offset"], item["hour"], item["minute"])
+            post = await goal_service.create_scheduled_post(
+                goal_id=goal_id,
+                account_id=account_id,
+                topic=item["topic"],
+                style=item.get("style", goal["style"]),
+                aspect_ratio=item.get("aspect_ratio", "3:4"),
+                image_count=item.get("image_count", 1),
+                scheduled_at=scheduled_at,
+            )
+            run_time = datetime.strptime(scheduled_at, "%Y-%m-%d %H:%M")
+            schedule_post(post["id"], run_time)
+            created_posts.append(post)
+
+        return {"analysis": plan.get("analysis", ""), "posts": created_posts}
 
 
 @router.get("/goals/{goal_id}/posts")
@@ -199,3 +242,68 @@ async def get_goal_posts(goal_id: int):
 @router.get("/posts")
 async def get_all_posts():
     return await goal_service.list_scheduled_posts()
+
+
+@router.post("/posts/{post_id}/run")
+async def run_post_now(post_id: int):
+    """立即执行一条排期任务（不管 scheduled_at）"""
+    from ..db import get_db as _get_db
+    from ..services.goal_service import execute_scheduled_post
+    async with _get_db() as db:
+        async with db.execute("SELECT id, status FROM scheduled_posts WHERE id = ?", (post_id,)) as cur:
+            row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="排期不存在")
+    if row["status"] not in ("pending", "failed"):
+        raise HTTPException(status_code=400, detail=f"当前状态 {row['status']} 不可立即执行")
+    async with _get_db() as db:
+        await db.execute("UPDATE scheduled_posts SET status='pending', error=NULL WHERE id=?", (post_id,))
+        await db.commit()
+    asyncio.create_task(execute_scheduled_post(post_id))
+    return {"ok": True, "post_id": post_id}
+
+
+@router.get("/proxy/image")
+async def proxy_image(url: str):
+    """代理 XHS CDN 图片，绕过防盗链"""
+    if not url.startswith("https://sns-avatar"):
+        raise HTTPException(status_code=400, detail="不支持的图片地址")
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers={"Referer": "https://www.xiaohongshu.com"}, timeout=10)
+    return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/webp"))
+
+
+# ── 浏览器服务 ────────────────────────────────────────
+class BrowserStartRequest(BaseModel):
+    account_id: str
+
+
+@router.post("/browser/start")
+async def browser_start(body: BrowserStartRequest):
+    """启动可视化 Playwright 浏览器，注入账号 cookie"""
+    from ..services import browser_service
+    cookie = await account_service.get_cookie(body.account_id)
+    if not cookie:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    asyncio.create_task(browser_service.start_browser(cookie))
+    return {"ok": True, "message": "浏览器启动中，请稍候..."}
+
+
+@router.post("/browser/stop")
+async def browser_stop():
+    from ..services import browser_service
+    await browser_service.stop_browser()
+    return {"ok": True}
+
+
+@router.get("/browser/status")
+async def browser_status():
+    from ..services import browser_service
+    return browser_service.get_status()
+
+
+@router.get("/browser/requests")
+async def browser_requests():
+    """获取浏览器拦截到的请求日志"""
+    from ..services import browser_service
+    return browser_service.get_request_log()
