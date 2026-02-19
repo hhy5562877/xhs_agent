@@ -1,3 +1,4 @@
+- [2026-02-19 05:00] FEAT: Cookie 验证预览功能，账号列表展示真实头像/昵称/粉丝数 (Files: src/xhs_agent/db.py, src/xhs_agent/services/upload_service.py, src/xhs_agent/services/account_service.py, src/xhs_agent/api/router.py, frontend/src/types.ts, frontend/src/api.ts, frontend/src/App.tsx, static/)
 - [2026-02-19 04:00] FEAT: 前端迁移至 React + Vite + Ant Design 6，静态构建输出到 static/ (Files: frontend/*, static/)
 - [2026-02-19 03:00] FEAT: 账号管理功能
 - [2026-02-19 02:00] FEAT: 优化图片提示词生成规则，要求中文文字入图、真实感、网感 (Files: src/xhs_agent/services/text_service.py)

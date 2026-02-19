@@ -11,10 +11,16 @@ from ..services.upload_service import download_image_to_tmp, upload_image_note
 logger = logging.getLogger("xhs_agent")
 
 
-async def list_goals() -> list[dict]:
+async def list_goals(account_id: str | None = None) -> list[dict]:
     async with get_db() as db:
-        async with db.execute("SELECT * FROM operation_goals ORDER BY created_at DESC") as cur:
-            rows = await cur.fetchall()
+        if account_id:
+            async with db.execute(
+                "SELECT * FROM operation_goals WHERE account_id = ? ORDER BY created_at DESC", (account_id,)
+            ) as cur:
+                rows = await cur.fetchall()
+        else:
+            async with db.execute("SELECT * FROM operation_goals ORDER BY created_at DESC") as cur:
+                rows = await cur.fetchall()
     return [dict(r) for r in rows]
 
 
@@ -25,17 +31,17 @@ async def get_goal(goal_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-async def create_goal(title: str, description: str, style: str, post_freq: int) -> dict:
+async def create_goal(account_id: str, title: str, description: str, style: str, post_freq: int) -> dict:
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     async with get_db() as db:
         cur = await db.execute(
-            "INSERT INTO operation_goals (title, description, style, post_freq, active, created_at) VALUES (?,?,?,?,1,?)",
-            (title, description, style, post_freq, created_at),
+            "INSERT INTO operation_goals (account_id, title, description, style, post_freq, active, created_at) VALUES (?,?,?,?,?,1,?)",
+            (account_id, title, description, style, post_freq, created_at),
         )
         await db.commit()
         goal_id = cur.lastrowid
-    return {"id": goal_id, "title": title, "description": description, "style": style,
-            "post_freq": post_freq, "active": 1, "created_at": created_at}
+    return {"id": goal_id, "account_id": account_id, "title": title, "description": description,
+            "style": style, "post_freq": post_freq, "active": 1, "created_at": created_at}
 
 
 async def toggle_goal(goal_id: int, active: bool) -> bool:
@@ -75,9 +81,7 @@ async def list_scheduled_posts(goal_id: int | None = None) -> list[dict]:
             ) as cur:
                 rows = await cur.fetchall()
         else:
-            async with db.execute(
-                "SELECT * FROM scheduled_posts ORDER BY scheduled_at ASC"
-            ) as cur:
+            async with db.execute("SELECT * FROM scheduled_posts ORDER BY scheduled_at ASC") as cur:
                 rows = await cur.fetchall()
     return [dict(r) for r in rows]
 
@@ -94,16 +98,12 @@ async def execute_scheduled_post(post_id: int) -> None:
 
     tmp_paths: list[str] = []
     try:
-        # 1. 生成文本内容
         content = await generate_xhs_content(post["topic"], post["style"], post["image_count"])
         prompts = content.image_prompts[:post["image_count"]]
-
-        # 2. 生成图片
         images = await generate_images(prompts, aspect_ratio=post["aspect_ratio"])
         image_urls = [img.url or "" for img in images if img.url]
         images_json = json.dumps([{"url": img.url, "b64_json": img.b64_json} for img in images])
 
-        # 3. 下载图片并上传
         from ..services.account_service import get_cookie
         cookie = await get_cookie(post["account_id"])
         if not cookie:
@@ -129,8 +129,7 @@ async def execute_scheduled_post(post_id: int) -> None:
         logger.error(f"定时任务 #{post_id} 失败: {e}")
         async with get_db() as db:
             await db.execute(
-                "UPDATE scheduled_posts SET status='failed', error=? WHERE id=?",
-                (str(e), post_id),
+                "UPDATE scheduled_posts SET status='failed', error=? WHERE id=?", (str(e), post_id),
             )
             await db.commit()
     finally:

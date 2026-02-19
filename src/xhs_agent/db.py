@@ -19,20 +19,26 @@ async def init_db() -> None:
     async with get_db() as db:
         await db.executescript("""
         CREATE TABLE IF NOT EXISTS accounts (
-            id          TEXT PRIMARY KEY,
-            name        TEXT NOT NULL,
-            cookie      TEXT NOT NULL,
-            created_at  TEXT NOT NULL
+            id           TEXT PRIMARY KEY,
+            name         TEXT NOT NULL,
+            cookie       TEXT NOT NULL,
+            xhs_user_id  TEXT,
+            nickname     TEXT,
+            avatar_url   TEXT,
+            fans         TEXT,
+            created_at   TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS operation_goals (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id  TEXT NOT NULL,
             title       TEXT NOT NULL,
             description TEXT NOT NULL,
             style       TEXT NOT NULL DEFAULT '生活方式',
             post_freq   INTEGER NOT NULL DEFAULT 1,
             active      INTEGER NOT NULL DEFAULT 1,
-            created_at  TEXT NOT NULL
+            created_at  TEXT NOT NULL,
+            FOREIGN KEY (account_id) REFERENCES accounts(id)
         );
 
         CREATE TABLE IF NOT EXISTS scheduled_posts (

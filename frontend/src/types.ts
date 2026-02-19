@@ -26,7 +26,18 @@ export interface Account {
   id: string
   name: string
   cookie_preview: string
+  xhs_user_id: string
+  nickname: string
+  avatar_url: string
+  fans: string
   created_at: string
+}
+
+export interface AccountPreview {
+  xhs_user_id: string
+  nickname: string
+  avatar_url: string
+  fans: string
 }
 
 export interface UploadRequest {
@@ -46,6 +57,7 @@ export interface UploadResponse {
 
 export interface Goal {
   id: number
+  account_id: string
   title: string
   description: string
   style: string

@@ -73,8 +73,23 @@ async def upload(request: UploadRequest):
 
 # ── 账号管理 ──────────────────────────────────────────
 class AccountCreate(BaseModel):
-    name: str
+    name: str = ""
     cookie: str
+
+
+class AccountPreview(BaseModel):
+    cookie: str
+
+
+@router.post("/accounts/preview")
+async def preview_account(body: AccountPreview):
+    """传入 cookie，返回小红书账号信息（不保存）"""
+    from ..services.upload_service import fetch_user_info
+    try:
+        info = await asyncio.to_thread(fetch_user_info, body.cookie)
+        return info
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cookie 无效或请求失败: {e}")
 
 
 class AccountUpdate(BaseModel):
@@ -114,19 +129,14 @@ class GoalCreate(BaseModel):
     account_id: str
 
 
-class PlanRequest(BaseModel):
-    goal_id: int
-    account_id: str
-
-
 @router.get("/goals")
-async def get_goals():
-    return await goal_service.list_goals()
+async def get_goals(account_id: str | None = None):
+    return await goal_service.list_goals(account_id)
 
 
 @router.post("/goals", status_code=201)
 async def create_goal(body: GoalCreate):
-    return await goal_service.create_goal(body.title, body.description, body.style, body.post_freq)
+    return await goal_service.create_goal(body.account_id, body.title, body.description, body.style, body.post_freq)
 
 
 @router.delete("/goals/{goal_id}", status_code=204)
@@ -144,18 +154,21 @@ async def toggle_goal(goal_id: int, active: bool):
 
 # ── AI 规划 + 排期 ────────────────────────────────────
 @router.post("/goals/{goal_id}/plan")
-async def plan_goal(goal_id: int, body: PlanRequest):
-    """让总管 AI 分析目标，生成并保存7天发布计划"""
+async def plan_goal(goal_id: int):
+    """让总管 AI 分析目标（使用目标绑定的账号），生成并保存7天发布计划"""
     goal = await goal_service.get_goal(goal_id)
     if not goal:
         raise HTTPException(status_code=404, detail="目标不存在")
 
-    cookie = await account_service.get_cookie(body.account_id)
+    account_id = goal["account_id"]
+    cookie = await account_service.get_cookie(account_id)
     if not cookie:
-        raise HTTPException(status_code=404, detail="账号不存在")
+        raise HTTPException(status_code=404, detail="账号不存在或 Cookie 已失效")
 
     try:
-        plan = await plan_operation(goal["title"], goal["description"], goal["style"], goal["post_freq"])
+        plan = await plan_operation(
+            goal["title"], goal["description"], goal["style"], goal["post_freq"], cookie
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 规划失败: {e}")
 
@@ -164,7 +177,7 @@ async def plan_goal(goal_id: int, body: PlanRequest):
         scheduled_at = calc_scheduled_time(item["day_offset"], item["hour"], item["minute"])
         post = await goal_service.create_scheduled_post(
             goal_id=goal_id,
-            account_id=body.account_id,
+            account_id=account_id,
             topic=item["topic"],
             style=item.get("style", goal["style"]),
             aspect_ratio=item.get("aspect_ratio", "3:4"),

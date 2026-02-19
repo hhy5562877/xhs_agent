@@ -1,5 +1,5 @@
 import type {
-  GenerateRequest, GenerateResponse, Account, UploadRequest, UploadResponse,
+  GenerateRequest, GenerateResponse, Account, AccountPreview, UploadRequest, UploadResponse,
   Goal, ScheduledPost, PlanResult,
 } from './types'
 
@@ -19,17 +19,19 @@ export const generateContent = (r: GenerateRequest) => post<GenerateResponse>('/
 export const uploadNote = (r: UploadRequest) => post<UploadResponse>('/upload', r)
 
 export const getAccounts = () => req<Account[]>('/accounts')
+export const previewAccount = (cookie: string) => post<AccountPreview>('/accounts/preview', { cookie })
 export const createAccount = (name: string, cookie: string) => post<Account>('/accounts', { name, cookie })
 export const deleteAccount = (id: string) => fetch(`${BASE}/accounts/${id}`, { method: 'DELETE' })
 
-export const getGoals = () => req<Goal[]>('/goals')
+export const getGoals = (account_id?: string) =>
+  req<Goal[]>(`/goals${account_id ? `?account_id=${account_id}` : ''}`)
 export const createGoal = (body: Omit<Goal, 'id' | 'active' | 'created_at'>) => post<Goal>('/goals', body)
 export const deleteGoal = (id: number) => fetch(`${BASE}/goals/${id}`, { method: 'DELETE' })
 export const toggleGoal = (id: number, active: boolean) =>
   req(`/goals/${id}/toggle?active=${active}`, { method: 'PATCH' })
 
-export const planGoal = (goal_id: number, account_id: string) =>
-  post<PlanResult>(`/goals/${goal_id}/plan`, { goal_id, account_id })
+export const planGoal = (goal_id: number) =>
+  req<PlanResult>(`/goals/${goal_id}/plan`, { method: 'POST' })
 
 export const getGoalPosts = (goal_id: number) => req<ScheduledPost[]>(`/goals/${goal_id}/posts`)
 export const getAllPosts = () => req<ScheduledPost[]>('/posts')

@@ -11,9 +11,9 @@ import {
   PictureOutlined, FileTextOutlined, TeamOutlined,
   BarChartOutlined, CalendarOutlined, ThunderboltOutlined,
 } from '@ant-design/icons'
-import type { GenerateResponse, Account, Goal, ScheduledPost } from './types'
+import type { GenerateResponse, Account, AccountPreview, Goal, ScheduledPost } from './types'
 import {
-  generateContent, uploadNote, getAccounts, createAccount, deleteAccount,
+  generateContent, uploadNote, getAccounts, previewAccount, createAccount, deleteAccount,
   getGoals, createGoal, deleteGoal, planGoal, getGoalPosts,
 } from './api'
 
@@ -59,13 +59,15 @@ export default function App() {
   const [newName, setNewName] = useState('')
   const [newCookie, setNewCookie] = useState('')
   const [addingAccount, setAddingAccount] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
+  const [previewInfo, setPreviewInfo] = useState<AccountPreview | null>(null)
 
   // operation goals
   const [goals, setGoals] = useState<Goal[]>([])
   const [goalOpen, setGoalOpen] = useState(false)
   const [addingGoal, setAddingGoal] = useState(false)
   const [planningGoalId, setPlanningGoalId] = useState<number | null>(null)
-  const [planAccountId, setPlanAccountId] = useState<string>('')
+  // planAccountId removed - goal is bound to account at creation
   const [planOpen, setPlanOpen] = useState(false)
   const [planGoalTarget, setPlanGoalTarget] = useState<Goal | null>(null)
   const [posts, setPosts] = useState<ScheduledPost[]>([])
@@ -123,16 +125,27 @@ export default function App() {
 
   // ── 账号管理 ──────────────────────────────────────────
   async function openAccountManager() {
-    setAccounts(await getAccounts()); setNewName(''); setNewCookie(''); setAccountOpen(true)
+    setAccounts(await getAccounts()); setNewName(''); setNewCookie('')
+    setPreviewInfo(null); setAccountOpen(true)
+  }
+
+  async function onPreviewCookie() {
+    if (!newCookie.trim()) { msgApi.warning('请先粘贴 Cookie'); return }
+    setPreviewing(true); setPreviewInfo(null)
+    try {
+      const info = await previewAccount(newCookie.trim())
+      setPreviewInfo(info)
+      if (!newName && info.nickname) setNewName(info.nickname)
+    } catch (e: unknown) { msgApi.error((e as Error).message) }
+    finally { setPreviewing(false) }
   }
 
   async function onAddAccount() {
-    if (!newName.trim()) { msgApi.warning('请填写账号名称'); return }
     if (!newCookie.trim()) { msgApi.warning('请填写 Cookie'); return }
     setAddingAccount(true)
     try {
       await createAccount(newName.trim(), newCookie.trim())
-      setAccounts(await getAccounts()); setNewName(''); setNewCookie('')
+      setAccounts(await getAccounts()); setNewName(''); setNewCookie(''); setPreviewInfo(null)
       msgApi.success('账号已保存')
     } catch (e: unknown) { msgApi.error((e as Error).message) }
     finally { setAddingAccount(false) }
@@ -147,7 +160,7 @@ export default function App() {
   // ── 运营目标 ──────────────────────────────────────────
   async function loadGoals() { setGoals(await getGoals()) }
 
-  async function openGoalManager() { await loadGoals(); setGoalOpen(true) }
+  async function openGoalManager() { await loadGoals(); setAccounts(await getAccounts()); setGoalOpen(true) }
 
   async function onAddGoal(values: Record<string, unknown>) {
     setAddingGoal(true)
@@ -155,6 +168,7 @@ export default function App() {
       await createGoal({
         title: values.title as string, description: values.description as string,
         style: values.style as string, post_freq: values.post_freq as number,
+        account_id: values.account_id as string,
       })
       await loadGoals(); goalForm.resetFields()
       msgApi.success('运营目标已创建')
@@ -167,20 +181,18 @@ export default function App() {
   }
 
   async function openPlanModal(goal: Goal) {
-    setPlanGoalTarget(goal); setPlanAccountId(''); setPlanAnalysis('')
-    setAccounts(await getAccounts()); setPlanOpen(true)
+    setPlanGoalTarget(goal); setPlanAnalysis('')
+    setPlanOpen(true)
   }
 
   async function onPlan() {
     if (!planGoalTarget) return
-    if (!planAccountId) { msgApi.warning('请选择发布账号'); return }
     setPlanningGoalId(planGoalTarget.id)
     try {
-      const res = await planGoal(planGoalTarget.id, planAccountId)
+      const res = await planGoal(planGoalTarget.id)
       setPlanAnalysis(res.analysis)
       msgApi.success(`AI 已生成 ${res.posts.length} 条发布计划`)
       setPlanOpen(false)
-      // 展示排期
       setPostsGoalId(planGoalTarget.id)
       setPosts(await getGoalPosts(planGoalTarget.id))
       setPostsOpen(true)
@@ -417,8 +429,10 @@ export default function App() {
                   </Popconfirm>,
                 ]}>
                 <List.Item.Meta
-                  avatar={<Avatar icon={<UserOutlined />} style={{ background: '#ff2442' }} />}
-                  title={<Text strong>{acc.name}</Text>}
+                  avatar={acc.avatar_url
+                    ? <Avatar src={acc.avatar_url} size={40} />
+                    : <Avatar icon={<UserOutlined />} size={40} style={{ background: '#ff2442' }} />}
+                  title={<Space size={6}><Text strong>{acc.nickname || acc.name}</Text>{acc.fans && <Text type="secondary" style={{ fontSize: 12 }}>粉丝 {acc.fans}</Text>}</Space>}
                   description={<Text type="secondary" style={{ fontSize: 12 }}>{acc.created_at} · {acc.cookie_preview}</Text>}
                 />
               </List.Item>
@@ -426,8 +440,20 @@ export default function App() {
         }
         <Divider>添加账号</Divider>
         <Space direction="vertical" style={{ width: '100%' }} size={10}>
-          <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="账号名称" prefix={<UserOutlined style={{ color: '#ccc' }} />} />
-          <TextArea rows={3} value={newCookie} onChange={e => setNewCookie(e.target.value)} placeholder="粘贴小红书 Cookie..." />
+          <TextArea rows={3} value={newCookie} onChange={e => { setNewCookie(e.target.value); setPreviewInfo(null) }} placeholder="粘贴小红书 Cookie..." />
+          <Button block icon={<UserOutlined />} loading={previewing} onClick={onPreviewCookie}>验证 Cookie</Button>
+          {previewInfo && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, background: '#fff7f8', border: '1px solid #ffd6dc' }}>
+              {previewInfo.avatar_url
+                ? <Avatar src={previewInfo.avatar_url} size={48} />
+                : <Avatar icon={<UserOutlined />} size={48} style={{ background: '#ff2442' }} />}
+              <div>
+                <Text strong style={{ fontSize: 15 }}>{previewInfo.nickname}</Text>
+                {previewInfo.fans && <div><Text type="secondary" style={{ fontSize: 12 }}>粉丝 {previewInfo.fans}</Text></div>}
+              </div>
+            </div>
+          )}
+          <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="账号备注名（可选，默认用昵称）" prefix={<UserOutlined style={{ color: '#ccc' }} />} />
           <Button type="primary" block icon={<PlusOutlined />} loading={addingAccount} onClick={onAddAccount} style={primaryBtnStyle}>保存账号</Button>
         </Space>
       </Modal>
@@ -437,6 +463,10 @@ export default function App() {
         open={goalOpen} onCancel={() => setGoalOpen(false)} footer={null} width={540}>
         <Form form={goalForm} onFinish={onAddGoal} layout="vertical"
           initialValues={{ style: '生活方式', post_freq: 1 }}>
+          <Form.Item name="account_id" label="绑定账号" rules={[{ required: true, message: '请选择账号' }]}>
+            <Select placeholder="选择该目标使用的小红书账号"
+              options={accounts.map(a => ({ label: a.name, value: a.id }))} />
+          </Form.Item>
           <Form.Item name="title" label="目标名称" rules={[{ required: true }]}>
             <Input placeholder="例如：咖啡品牌推广、个人IP打造" />
           </Form.Item>
@@ -469,17 +499,9 @@ export default function App() {
           </Button>,
         ]} width={480}>
         {planGoalTarget && (
-          <Space direction="vertical" style={{ width: '100%' }} size={16}>
-            <Alert type="info" showIcon
-              message={`目标：${planGoalTarget.title}`}
-              description="AI 将分析运营目标，结合小红书平台规律，自动生成未来7天的内容发布计划并加入定时队列。" />
-            <div>
-              <Text strong style={{ display: 'block', marginBottom: 8 }}>选择发布账号</Text>
-              <Select style={{ width: '100%' }} placeholder="选择用于发布的账号"
-                value={planAccountId || undefined} onChange={setPlanAccountId}
-                options={accounts.map(a => ({ label: a.name, value: a.id }))} />
-            </div>
-          </Space>
+          <Alert type="info" showIcon
+            message={`目标：${planGoalTarget.title}`}
+            description="AI 将读取该账号近期发布数据，结合小红书平台规律，自动生成未来7天的内容发布计划并加入定时队列。" />
         )}
       </Modal>
 
