@@ -130,6 +130,24 @@ async def update_account(account_id: str, body: AccountUpdate):
     return {"ok": True}
 
 
+@router.get("/accounts/{account_id}/check")
+async def check_account_cookie(account_id: str):
+    cookie = await account_service.get_cookie(account_id)
+    if not cookie:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    from ..services.upload_service import fetch_user_info
+
+    try:
+        info = await asyncio.to_thread(fetch_user_info, cookie)
+        return {
+            "valid": True,
+            "nickname": info.get("nickname", ""),
+            "fans": info.get("fans", ""),
+        }
+    except Exception as e:
+        return {"valid": False, "reason": str(e)[:100]}
+
+
 # ── 运营目标 ──────────────────────────────────────────
 class GoalCreate(BaseModel):
     title: str

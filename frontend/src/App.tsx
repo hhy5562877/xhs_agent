@@ -15,7 +15,7 @@ import type { GenerateResponse, Account, AccountPreview, Goal, ScheduledPost, Sy
 import {
   generateContent, uploadNote, getAccounts, previewAccount, createAccount, deleteAccount,
   getGoals, createGoal, deleteGoal, updateGoal, planGoal, getGoalPosts, runPostNow, updateAccountCookie,
-  getSystemConfig, updateSystemConfig,
+  checkAccountCookie, getSystemConfig, updateSystemConfig,
 } from './api'
 
 const { Header, Content } = Layout
@@ -67,6 +67,8 @@ export default function App() {
   const [updateCookieVal, setUpdateCookieVal] = useState('')
   const [updatingCookie, setUpdatingCookie] = useState(false)
   const [runningPostIds, setRunningPostIds] = useState<Set<number>>(new Set())
+  const [checkingIds, setCheckingIds] = useState<Set<string>>(new Set())
+  const [cookieStatus, setCookieStatus] = useState<Record<string, 'valid' | 'invalid'>>({})
 
   // operation goals
   const [goals, setGoals] = useState<Goal[]>([])
@@ -176,6 +178,17 @@ export default function App() {
       msgApi.success('Cookie 已更新')
     } catch (e: unknown) { msgApi.error((e as Error).message) }
     finally { setUpdatingCookie(false) }
+  }
+
+  async function onCheckCookie(accountId: string) {
+    setCheckingIds(prev => new Set(prev).add(accountId))
+    try {
+      const res = await checkAccountCookie(accountId)
+      setCookieStatus(prev => ({ ...prev, [accountId]: res.valid ? 'valid' : 'invalid' }))
+      if (res.valid) msgApi.success(`Cookie 有效（${res.nickname}）`)
+      else msgApi.error(`Cookie 已失效：${res.reason || '未知原因'}`)
+    } catch (e: unknown) { msgApi.error((e as Error).message) }
+    finally { setCheckingIds(prev => { const s = new Set(prev); s.delete(accountId); return s }) }
   }
 
   async function onRunPostNow(postId: number) {
@@ -457,6 +470,11 @@ export default function App() {
                 : <List dataSource={accounts} renderItem={acc => (
                     <List.Item style={{ borderRadius: 10, padding: '10px 14px', marginBottom: 8, border: '1px solid #f0f0f0', background: '#fafafa' }}
                       actions={[
+                        <Button key="check" size="small" loading={checkingIds.has(acc.id)}
+                          icon={cookieStatus[acc.id] === 'valid' ? <CheckCircleFilled style={{ color: '#52c41a' }} /> : cookieStatus[acc.id] === 'invalid' ? <CheckCircleFilled style={{ color: '#ff4d4f' }} /> : <CheckCircleFilled />}
+                          onClick={() => onCheckCookie(acc.id)}>
+                          {cookieStatus[acc.id] === 'valid' ? '有效' : cookieStatus[acc.id] === 'invalid' ? '已失效' : '检查'}
+                        </Button>,
                         <Button key="cookie" size="small" icon={<EditOutlined />} onClick={() => { setUpdateCookieTarget(acc); setUpdateCookieVal('') }}>更新Cookie</Button>,
                         <Popconfirm key="del" title="确认删除？" onConfirm={() => onDeleteAccount(acc.id)} okText="删除" okButtonProps={{ danger: true }}>
                           <Button danger size="small" icon={<DeleteOutlined />}>删除</Button>

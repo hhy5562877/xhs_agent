@@ -42,10 +42,8 @@ export const runPostNow = (id: number) => req(`/posts/${id}/run`, { method: 'POS
 export const updateAccountCookie = (id: string, cookie: string) =>
   req(`/accounts/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cookie }) })
 
-export const startBrowser = (account_id: string) => post('/browser/start', { account_id })
-export const stopBrowser = () => req('/browser/stop', { method: 'POST' })
-export const getBrowserStatus = () => req<{ status: string; request_count: number }>('/browser/status')
-export const getBrowserRequests = () => req<Array<Record<string, unknown>>>('/browser/requests')
+export const checkAccountCookie = (id: string) =>
+  req<{ valid: boolean; nickname?: string; fans?: string; reason?: string }>(`/accounts/${id}/check`)
 
 export const getSystemConfig = () => req<SystemConfig>('/config')
 export const updateSystemConfig = (body: SystemConfig) =>
