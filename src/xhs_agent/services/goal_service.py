@@ -193,6 +193,16 @@ async def execute_scheduled_post(post_id: int) -> None:
             if content.image_styles
             else None
         )
+        logger.info(
+            "定时任务 #%d 图片风格决策: %s",
+            post_id,
+            ", ".join(
+                f"第{i + 1}张=[{s}] {p[:20]}..."
+                for i, (p, s) in enumerate(
+                    zip(prompts, styles or ["photo"] * len(prompts))
+                )
+            ),
+        )
         images = await generate_images(
             prompts, aspect_ratio=post["aspect_ratio"], styles=styles
         )
