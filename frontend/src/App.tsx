@@ -307,6 +307,7 @@ export default function App() {
           setActiveTab(key)
           if (key === 'operation') { loadGoals(); getAccounts().then(setAccounts) }
           if (key === 'accounts') getAccounts().then(setAccounts)
+          if (key === 'config') loadConfig()
         }} size="large"
           items={[
             { key: 'generate', label: <Space><FileTextOutlined />内容生成</Space>, children: null },
@@ -315,7 +316,6 @@ export default function App() {
             { key: 'config', label: <Space><SettingOutlined />系统配置</Space>, children: null },
           ]}
           style={{ marginBottom: 24 }}
-          onChange={(key) => { setActiveTab(key); if (key === 'config') loadConfig() }}
         />
 
         {/* ── 内容生成 Tab ── */}
@@ -504,7 +504,7 @@ export default function App() {
                 message="配置说明"
                 description="所有 API Key 等敏感配置均加密存储在本地数据库中，不会上传到任何服务器。首次部署后请在此页面完成配置。" />
               <Form form={configForm} onFinish={onSaveConfig} layout="vertical">
-                <Divider orientation="left">文本生成（SiliconFlow）</Divider>
+                <Divider>文本生成（SiliconFlow）</Divider>
                 <Row gutter={16}>
                   <Col span={24}>
                     <Form.Item name="siliconflow_api_key" label="API Key">
@@ -522,7 +522,7 @@ export default function App() {
                     </Form.Item>
                   </Col>
                 </Row>
-                <Divider orientation="left">图片生成</Divider>
+                <Divider>图片生成</Divider>
                 <Row gutter={16}>
                   <Col span={24}>
                     <Form.Item name="image_api_key" label="API Key">
@@ -540,7 +540,7 @@ export default function App() {
                     </Form.Item>
                   </Col>
                 </Row>
-                <Divider orientation="left">WxPusher 通知（可选）</Divider>
+                <Divider>WxPusher 通知（可选）</Divider>
                 <Row gutter={16}>
                   <Col span={12}>
                     <Form.Item name="wxpusher_app_token" label="App Token">
