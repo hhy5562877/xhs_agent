@@ -1,3 +1,5 @@
+- [2026-02-20 14:40] FIX: 改进用户信息获取的错误处理，添加详细日志帮助诊断 Cookie 问题 (Files: src/xhs_agent/services/upload_service.py, src/xhs_agent/services/xhs_http.py)
+- [2026-02-20 14:33] FIX: 修复 Cookie 域名设置问题，确保对所有小红书子域名有效；优化创作者中心 API 错误处理 (Files: src/xhs_agent/services/upload_service.py)
 - [2026-02-20 14:27] FEAT: 集成 WxPusher 通知系统，支持笔记发布成功/失败通知 (Files: pyproject.toml, .env.example, src/xhs_agent/config.py, src/xhs_agent/services/notification_service.py, src/xhs_agent/services/goal_service.py)
 - [2026-02-20 14:04] CHORE: 更新 .gitignore，忽略数据库文件、macOS 文件和环境配置文件 (Files: .gitignore)
 - [2026-02-20 14:04] FEAT: XhsHttpClient 补全 API 接口：搜索笔记、笔记详情、评论、子评论、短链接、首页推荐 (Files: src/xhs_agent/services/xhs_http.py)

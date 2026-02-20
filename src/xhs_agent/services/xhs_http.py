@@ -1,6 +1,7 @@
 """
 用 curl_cffi 直接发 XHS API 请求，模拟 Chrome TLS 指纹，复用本地签名函数。
 """
+
 import json
 import logging
 import random
@@ -58,7 +59,9 @@ class XhsHttpClient:
     def post(self, uri: str, data: dict | None = None) -> Any:
         headers = self._build_headers(uri, data)
         headers["Content-Type"] = "application/json;charset=UTF-8"
-        resp = self._session.post(XHS_HOST + uri, headers=headers, json=data or {}, timeout=30)
+        resp = self._session.post(
+            XHS_HOST + uri, headers=headers, json=data or {}, timeout=30
+        )
         return self._handle(resp)
 
     def _handle(self, resp) -> Any:
@@ -78,12 +81,18 @@ class XhsHttpClient:
             return data.get("data", {})
         if data.get("code") == 0:
             return data.get("data", {})
+        error_msg = data.get("msg", "未知错误")
+        if data.get("code") == -1 and "登录" in error_msg:
+            raise RuntimeError(f"Cookie 已失效: {error_msg}")
         raise RuntimeError(f"XHS API 错误: {data}")
 
     # ── 具体接口 ──────────────────────────────────────────
 
     def get_self_info(self) -> dict:
         return self.get("/api/sns/web/v1/user/selfinfo") or {}
+
+    def get_self_info_v2(self) -> dict:
+        return self.get("/api/sns/web/v2/user/me") or {}
 
     def get_user_notes(self, user_id: str, cursor: str = "") -> dict:
         params = {
