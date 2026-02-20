@@ -85,9 +85,9 @@ async def update_goal(
         if cur.rowcount == 0:
             await db.commit()
             return False
-        # 同步更新该目标下所有 pending 排期的账号
+        # 同步更新该目标下所有排期的账号（不限状态）
         await db.execute(
-            "UPDATE scheduled_posts SET account_id=? WHERE goal_id=? AND status='pending'",
+            "UPDATE scheduled_posts SET account_id=? WHERE goal_id=?",
             (account_id, goal_id),
         )
         await db.commit()
