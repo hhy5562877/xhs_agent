@@ -54,15 +54,33 @@ def _build_poster_prompt(prompt: str) -> str:
     return _POSTER_STYLE_PREFIX + prompt
 
 
-async def _call_image_api(prompt: str, size: str) -> GeneratedImage:
+async def _call_image_api(prompt: str, size: str, aspect_ratio: str) -> GeneratedImage:
     base_url = await get_setting("image_api_base_url")
     api_key = await get_setting("image_api_key")
     model = await get_setting("image_model")
 
     logger.debug(
-        f"[ImageAPI] 请求参数: model={model!r}, size={size!r}, prompt长度={len(prompt)}字"
+        f"[ImageAPI] 请求参数: model={model!r}, size={size!r}, aspect_ratio={aspect_ratio!r}, prompt长度={len(prompt)}字"
     )
     logger.debug(f"[ImageAPI] 完整提示词: {prompt}")
+
+    is_nano_banana = model.startswith("nano-banana")
+    if is_nano_banana:
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "response_format": "url",
+            "aspect_ratio": aspect_ratio,
+        }
+    else:
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "n": 1,
+            "response_format": "url",
+            "size": size,
+            "watermark": False,
+        }
 
     async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(
@@ -71,14 +89,7 @@ async def _call_image_api(prompt: str, size: str) -> GeneratedImage:
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": model,
-                "prompt": prompt,
-                "n": 1,
-                "response_format": "url",
-                "size": size,
-                "watermark": False,
-            },
+            json=payload,
         )
         if not response.is_success:
             logger.error(f"图片生成失败 {response.status_code}: {response.text[:500]}")
@@ -125,7 +136,7 @@ async def generate_images(
         for p, s in zip(prompts, styles)
     ]
 
-    tasks = [_call_image_api(p, size) for p in built_prompts]
+    tasks = [_call_image_api(p, size, aspect_ratio) for p in built_prompts]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     images: list[GeneratedImage] = []

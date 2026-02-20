@@ -1,3 +1,4 @@
+- [2026-02-20 23:20] FEAT: 图片生成支持 nano-banana 模型，根据模型名自动路由请求格式（nano-banana 用 aspect_ratio，其他模型用 size） (Files: src/xhs_agent/services/image_service.py)
 - [2026-02-20 23:10] FEAT: 内容风格选项扩充至15个分类，新增"其他"选项支持手动输入自定义风格，封装 StyleSelect 组件复用于三处表单 (Files: frontend/src/App.tsx, static/)
 - [2026-02-20 22:55] FIX: 修复 prompt_agent.py 兜底逻辑中残留的 image_styles 变量引用导致 NameError (Files: src/xhs_agent/agent/prompt_agent.py)
 - [2026-02-20 19:30] FIX: 删除运营目标时同步取消调度器 pending job 并删除所有关联排期记录 (Files: src/xhs_agent/api/router.py, src/xhs_agent/services/goal_service.py)
