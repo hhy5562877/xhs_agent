@@ -22,7 +22,41 @@ const { Header, Content } = Layout
 const { Title, Text, Paragraph } = Typography
 const { TextArea } = Input
 
-const STYLES = ['生活方式', '美食探店', '旅行攻略', '穿搭分享', '护肤美妆', '健身运动', '读书学习']
+const STYLES = [
+  '生活方式', '美食探店', '旅行攻略', '穿搭分享', '护肤美妆', '健身运动', '读书学习',
+  '职场干货', '情感故事', '母婴育儿', '宠物日常', '家居装修', '数码科技', '游戏娱乐',
+  '艺术创作', '其他',
+]
+
+function StyleSelect({ value, onChange, size }: { value?: string; onChange?: (v: string) => void; size?: 'large' | 'middle' | 'small' }) {
+  const isOther = value !== undefined && !STYLES.slice(0, -1).includes(value)
+  const selectVal = isOther ? '其他' : (value ?? '生活方式')
+
+  function onSelectChange(v: string) {
+    if (v !== '其他') onChange?.(v)
+    else onChange?.('')
+  }
+
+  return (
+    <Space direction="vertical" style={{ width: '100%' }} size={4}>
+      <Select
+        size={size}
+        style={{ width: '100%' }}
+        value={selectVal}
+        onChange={onSelectChange}
+        options={STYLES.map(s => ({ label: s, value: s }))}
+      />
+      {(selectVal === '其他' || isOther) && (
+        <Input
+          size={size}
+          placeholder="请输入自定义风格"
+          value={isOther ? value : ''}
+          onChange={e => onChange?.(e.target.value)}
+        />
+      )}
+    </Space>
+  )
+}
 const avatarSrc = (url: string) => url ? `/api/proxy/image?url=${encodeURIComponent(url)}` : ''
 const RATIOS = [
   { label: '3:4（推荐）', value: '3:4' },
@@ -347,7 +381,7 @@ export default function App() {
                 </Form.Item>
                 <Row gutter={16}>
                   <Col span={8}><Form.Item name="style" label="内容风格">
-                    <Select size="large" options={STYLES.map(s => ({ label: s, value: s }))} />
+                    <StyleSelect size="large" />
                   </Form.Item></Col>
                   <Col span={8}><Form.Item name="aspect_ratio" label="图片比例">
                     <Select size="large" options={RATIOS} />
@@ -683,7 +717,7 @@ export default function App() {
           <Row gutter={16}>
             <Col span={14}>
               <Form.Item name="style" label="主要内容风格">
-                <Select options={STYLES.map(s => ({ label: s, value: s }))} />
+                <StyleSelect />
               </Form.Item>
             </Col>
             <Col span={10}>
@@ -780,7 +814,7 @@ export default function App() {
           <Row gutter={16}>
             <Col span={14}>
               <Form.Item name="style" label="主要内容风格">
-                <Select options={STYLES.map(s => ({ label: s, value: s }))} />
+                <StyleSelect />
               </Form.Item>
             </Col>
             <Col span={10}>
