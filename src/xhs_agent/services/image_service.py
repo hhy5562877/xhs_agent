@@ -80,6 +80,11 @@ async def _call_image_api(prompt: str, size: str) -> GeneratedImage:
             logger.error(f"图片生成失败 {response.status_code}: {response.text[:500]}")
         response.raise_for_status()
 
+    raw = response.text
+    if not raw.strip():
+        logger.error(f"图片生成 API 返回空响应，prompt 前30字: {prompt[:30]}")
+        return GeneratedImage()
+
     data = response.json()
     items = data.get("data", [])
     if not items:

@@ -1,3 +1,4 @@
+- [2026-02-20 17:30] FIX: 修复图片风格全为 photo 问题，重写 SYSTEM_PROMPT 按风格生成对应提示词；修复图片 API 空响应日志 (Files: src/xhs_agent/services/text_service.py, src/xhs_agent/services/image_service.py)
 - [2026-02-20 17:10] FEAT: 账号管理新增 Cookie 有效性检查功能 (Files: src/xhs_agent/api/router.py, frontend/src/api.ts, frontend/src/App.tsx, static/)
 - [2026-02-20 16:50] FEAT: 前端移除 Playwright 调试工具，清理相关 state/函数/import (Files: frontend/src/App.tsx)
 - [2026-02-20 16:30] FEAT: 配置迁移至数据库，前端新增系统配置页面，移除 .env 依赖 (Files: src/xhs_agent/db.py, src/xhs_agent/config.py, src/xhs_agent/api/router.py, src/xhs_agent/services/text_service.py, src/xhs_agent/services/image_service.py, src/xhs_agent/services/notification_service.py, src/xhs_agent/services/manager_service.py, frontend/src/types.ts, frontend/src/api.ts, frontend/src/App.tsx, docker-compose.yml)
