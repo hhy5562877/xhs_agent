@@ -3,7 +3,9 @@
 """
 import json
 import logging
+import random
 import secrets
+import time
 from typing import Any
 from curl_cffi.requests import Session
 
@@ -107,3 +109,123 @@ class XhsHttpClient:
             cursor = data.get("cursor", "")
         logger.info(f"get_user_all_notes 共获取 {len(results)} 条笔记")
         return results
+
+    # ── 搜索笔记 ──────────────────────────────────────────
+
+    @staticmethod
+    def _get_search_id() -> str:
+        """生成搜索会话 ID：毫秒时间戳左移64位 + 随机数，Base36 编码"""
+        e = int(time.time() * 1000) << 64
+        t = int(random.uniform(0, 2147483646))
+        n = e + t
+        alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        base36 = ""
+        while n:
+            n, i = divmod(n, 36)
+            base36 = alphabet[i] + base36
+        return base36 or "0"
+
+    def search_notes(
+        self,
+        keyword: str,
+        page: int = 1,
+        page_size: int = 20,
+        sort: str = "general",
+        note_type: int = 0,
+    ) -> dict:
+        """关键词搜索笔记 (POST /api/sns/web/v1/search/notes)"""
+        data = {
+            "keyword": keyword,
+            "page": page,
+            "page_size": page_size,
+            "search_id": self._get_search_id(),
+            "sort": sort,
+            "note_type": note_type,
+        }
+        return self.post("/api/sns/web/v1/search/notes", data) or {}
+
+    # ── 笔记详情 ──────────────────────────────────────────
+
+    def get_note_by_id(
+        self,
+        note_id: str,
+        xsec_token: str = "",
+        xsec_source: str = "pc_feed",
+    ) -> dict:
+        """获取笔记详情 (POST /api/sns/web/v1/feed)"""
+        data = {
+            "source_note_id": note_id,
+            "image_formats": ["jpg", "webp", "avif"],
+            "extra": {"need_body_topic": 1},
+            "xsec_token": xsec_token,
+            "xsec_source": xsec_source,
+        }
+        return self.post("/api/sns/web/v1/feed", data) or {}
+
+    # ── 评论 ──────────────────────────────────────────────
+
+    def get_note_comments(
+        self,
+        note_id: str,
+        cursor: str = "",
+        xsec_token: str = "",
+    ) -> dict:
+        """获取笔记评论列表 (GET /api/sns/web/v2/comment/page)"""
+        params = {
+            "note_id": note_id,
+            "cursor": cursor,
+            "top_comment_id": "",
+            "image_formats": "jpg,webp,avif",
+            "xsec_token": xsec_token,
+        }
+        return self.get("/api/sns/web/v2/comment/page", params) or {}
+
+    def get_note_sub_comments(
+        self,
+        note_id: str,
+        root_comment_id: str,
+        num: int = 10,
+        cursor: str = "",
+        xsec_token: str = "",
+    ) -> dict:
+        """获取子评论（回复）(GET /api/sns/web/v2/comment/sub/page)"""
+        params = {
+            "note_id": note_id,
+            "root_comment_id": root_comment_id,
+            "num": num,
+            "cursor": cursor,
+            "xsec_token": xsec_token,
+        }
+        return self.get("/api/sns/web/v2/comment/sub/page", params) or {}
+
+    # ── 短链接 ────────────────────────────────────────────
+
+    def get_note_short_url(self, original_url: str) -> dict:
+        """获取笔记短链接 (POST /api/sns/web/short_url)"""
+        return self.post("/api/sns/web/short_url", {"original_url": original_url}) or {}
+
+    # ── 首页推荐 ──────────────────────────────────────────
+
+    def get_homefeed_notes(
+        self,
+        category: str = "homefeed_recommend",
+        cursor_score: str = "",
+        note_index: int = 0,
+        num: int = 18,
+    ) -> dict:
+        """获取首页推荐笔记 (POST /api/sns/web/v1/homefeed)"""
+        data = {
+            "category": category,
+            "cursor_score": cursor_score,
+            "image_formats": ["jpg", "webp", "avif"],
+            "need_filter_image": False,
+            "need_num": num,
+            "note_index": note_index,
+            "num": num,
+            "refresh_type": 3,
+            "search_key": "",
+            "unread_begin_note_id": "",
+            "unread_end_note_id": "",
+            "unread_note_count": 0,
+        }
+        return self.post("/api/sns/web/v1/homefeed", data) or {}

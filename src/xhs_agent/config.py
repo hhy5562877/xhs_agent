@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     image_api_base_url: str
     image_model: str = "nano-banana"
 
+    wxpusher_app_token: str = ""
+    wxpusher_uids: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

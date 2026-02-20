@@ -166,6 +166,10 @@ async def list_scheduled_posts(goal_id: int | None = None) -> list[dict]:
 
 async def execute_scheduled_post(post_id: int) -> None:
     """执行一条定时发布任务"""
+    from ..services.notification_service import get_notification_service
+
+    notification = get_notification_service()
+
     async with get_db() as db:
         async with db.execute(
             "SELECT * FROM scheduled_posts WHERE id = ?", (post_id,)
@@ -223,6 +227,11 @@ async def execute_scheduled_post(post_id: int) -> None:
             await db.commit()
         logger.info(f"定时任务 #{post_id} 发布成功: {content.title}")
 
+        await notification.send_success_notification(
+            "笔记发布成功",
+            f"任务 ID: {post_id}\n标题: {content.title}\n话题: {post['topic']}\n账号: {account_id}",
+        )
+
     except Exception as e:
         import traceback
 
@@ -233,6 +242,11 @@ async def execute_scheduled_post(post_id: int) -> None:
                 (str(e), post_id),
             )
             await db.commit()
+
+        await notification.send_error_notification(
+            "笔记发布失败",
+            f"任务 ID: {post_id}\n话题: {post['topic']}\n错误: {str(e)[:200]}",
+        )
     finally:
         for p in tmp_paths:
             try:

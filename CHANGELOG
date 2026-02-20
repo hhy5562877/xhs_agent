@@ -1,3 +1,8 @@
+- [2026-02-20 14:27] FEAT: 集成 WxPusher 通知系统，支持笔记发布成功/失败通知 (Files: pyproject.toml, .env.example, src/xhs_agent/config.py, src/xhs_agent/services/notification_service.py, src/xhs_agent/services/goal_service.py)
+- [2026-02-20 14:04] CHORE: 更新 .gitignore，忽略数据库文件、macOS 文件和环境配置文件 (Files: .gitignore)
+- [2026-02-20 14:04] FEAT: XhsHttpClient 补全 API 接口：搜索笔记、笔记详情、评论、子评论、短链接、首页推荐 (Files: src/xhs_agent/services/xhs_http.py)
+- [2026-02-20 14:04] FEAT: 优化图片提示词规则为"手机误拍感快照"风格，约100字详细描述 (Files: src/xhs_agent/services/text_service.py)
+- [2026-02-20 14:04] CHORE: 添加 tenacity 依赖，清理旧 js/ 目录文件 (Files: pyproject.toml, uv.lock, js/)
 - [2026-02-20 13:53] FIX: 修复 update_goal SQL 事务一致性问题，检查第一个 UPDATE 是否成功后再执行第二个 UPDATE (Files: src/xhs_agent/services/goal_service.py)
 - [2026-02-20 13:53] FIX: 修复图片生成数量不足时的补齐逻辑，改为记录警告并返回实际数量，避免返回重复图片 (Files: src/xhs_agent/services/image_service.py)
 - [2026-02-20 13:53] FEAT: 为图片生成添加宽高比无效值的警告日志 (Files: src/xhs_agent/services/image_service.py)
