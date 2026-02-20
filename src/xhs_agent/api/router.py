@@ -171,6 +171,16 @@ async def create_goal(body: GoalCreate):
 
 @router.delete("/goals/{goal_id}", status_code=204)
 async def delete_goal(goal_id: int):
+    # 取消调度器中该目标下所有 pending job
+    posts = await goal_service.list_scheduled_posts(goal_id)
+    for p in posts:
+        if p["status"] == "pending":
+            job_id = f"post_{p['id']}"
+            if scheduler.get_job(job_id):
+                scheduler.remove_job(job_id)
+    # 删除所有排期记录（不限状态）
+    await goal_service.delete_all_posts(goal_id)
+    # 删除目标本身
     if not await goal_service.delete_goal(goal_id):
         raise HTTPException(status_code=404, detail="目标不存在")
 

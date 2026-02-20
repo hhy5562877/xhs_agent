@@ -1,3 +1,4 @@
+- [2026-02-20 19:30] FIX: 删除运营目标时同步取消调度器 pending job 并删除所有关联排期记录 (Files: src/xhs_agent/api/router.py, src/xhs_agent/services/goal_service.py)
 - [2026-02-20 16:35] FEAT: 笔记图片风格统一化——整篇笔记只使用一种视觉风格（photo 或 poster），禁止混排；text_service SYSTEM_PROMPT 改为为整篇笔记决定统一风格；prompt_agent 所有图片只从同类模板中选不同子模板 (Files: src/xhs_agent/services/text_service.py, src/xhs_agent/agent/prompt_agent.py, src/xhs_agent/api/schemas.py, src/xhs_agent/agent/xhs_agent.py)
 - [2026-02-20 16:30] CHORE: 从所有 git 历史中删除 .env 文件，将 log/ 目录加入 .gitignore (Files: .gitignore)
 - [2026-02-20 18:10] FEAT: 日志补充完整提示词输出——所有 AI 请求（TextService/PromptAgent/ManagerAI）的 system_prompt 和 user_prompt 均写入 DEBUG 日志；get_user_all_notes 原始返回数据写入 DEBUG 日志 (Files: src/xhs_agent/services/text_service.py, src/xhs_agent/agent/prompt_agent.py, src/xhs_agent/services/manager_service.py, src/xhs_agent/services/upload_service.py)

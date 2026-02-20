@@ -112,6 +112,16 @@ async def delete_pending_posts(goal_id: int) -> int:
     return cur.rowcount
 
 
+async def delete_all_posts(goal_id: int) -> int:
+    async with get_db() as db:
+        cur = await db.execute(
+            "DELETE FROM scheduled_posts WHERE goal_id = ?",
+            (goal_id,),
+        )
+        await db.commit()
+    return cur.rowcount
+
+
 async def create_scheduled_post(
     goal_id: int,
     account_id: str,
