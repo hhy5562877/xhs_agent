@@ -242,12 +242,9 @@ async def build_image_prompts(
     for i, sel in enumerate(selections[:image_count]):
         template_key = sel.get("template_key", "")
         final_prompt = sel.get("final_prompt", "")
-        selected_style = PROMPT_TEMPLATES.get(template_key, {}).get(
-            "style", image_styles[i] if i < len(image_styles) else "photo"
-        )
 
         logger.debug(
-            f"[PromptAgent] 图片{i + 1}: 模板={template_key!r}，风格={selected_style!r}，提示词={final_prompt[:60]}..."
+            f"[PromptAgent] 图片{i + 1}: 模板={template_key!r}，风格={unified_style!r}，提示词={final_prompt[:60]}..."
         )
 
         prompts.append(final_prompt)
