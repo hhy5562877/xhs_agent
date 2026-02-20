@@ -15,7 +15,7 @@ import type { GenerateResponse, Account, AccountPreview, Goal, ScheduledPost, Sy
 import {
   generateContent, uploadNote, getAccounts, previewAccount, createAccount, deleteAccount,
   getGoals, createGoal, deleteGoal, updateGoal, planGoal, getGoalPosts, runPostNow, updateAccountCookie,
-  startBrowser, stopBrowser, getBrowserStatus, getSystemConfig, updateSystemConfig,
+  getSystemConfig, updateSystemConfig,
 } from './api'
 
 const { Header, Content } = Layout
@@ -67,9 +67,6 @@ export default function App() {
   const [updateCookieVal, setUpdateCookieVal] = useState('')
   const [updatingCookie, setUpdatingCookie] = useState(false)
   const [runningPostIds, setRunningPostIds] = useState<Set<number>>(new Set())
-  const [browserStatus, setBrowserStatus] = useState<string>('stopped')
-  const [browserReqCount, setBrowserReqCount] = useState(0)
-  const [startingBrowser, setStartingBrowser] = useState(false)
 
   // operation goals
   const [goals, setGoals] = useState<Goal[]>([])
@@ -191,26 +188,6 @@ export default function App() {
       if (goalId) setPosts(await getGoalPosts(goalId))
     } catch (e: unknown) { msgApi.error((e as Error).message) }
     finally { setRunningPostIds(prev => { const s = new Set(prev); s.delete(postId); return s }) }
-  }
-
-  async function onStartBrowser(accountId: string) {
-    setStartingBrowser(true)
-    try {
-      await startBrowser(accountId)
-      msgApi.success('浏览器启动中，请稍候...')
-      // 轮询状态
-      const poll = setInterval(async () => {
-        const s = await getBrowserStatus()
-        setBrowserStatus(s.status); setBrowserReqCount(s.request_count)
-        if (s.status === 'stopped') clearInterval(poll)
-      }, 2000)
-    } catch (e: unknown) { msgApi.error((e as Error).message) }
-    finally { setStartingBrowser(false) }
-  }
-
-  async function onStopBrowser() {
-    await stopBrowser(); setBrowserStatus('stopped'); setBrowserReqCount(0)
-    msgApi.success('浏览器已关闭')
   }
 
   // ── 运营目标 ──────────────────────────────────────────
@@ -513,30 +490,6 @@ export default function App() {
                 <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="账号备注名（可选，默认用昵称）" prefix={<UserOutlined style={{ color: '#ccc' }} />} />
                 <Button type="primary" block icon={<PlusOutlined />} loading={addingAccount} onClick={onAddAccount} style={primaryBtnStyle}>保存账号</Button>
               </Space>
-              <Divider>调试工具</Divider>
-              <Alert type="info" showIcon style={{ marginBottom: 12 }}
-                message="Playwright 浏览器调试"
-                description="遇到验证码时，选择账号启动可视化浏览器，手动完成验证后请求将自动恢复。所有请求会被记录到 log/browser_requests/ 目录。" />
-              <Space wrap>
-                {accounts.map(acc => (
-                  <Button key={acc.id} icon={<TeamOutlined />}
-                    loading={startingBrowser} disabled={browserStatus === 'running'}
-                    onClick={() => onStartBrowser(acc.id)}>
-                    启动浏览器（{acc.nickname || acc.name}）
-                  </Button>
-                ))}
-                {browserStatus === 'running' && (
-                  <Button danger icon={<DeleteOutlined />} onClick={onStopBrowser}>关闭浏览器</Button>
-                )}
-              </Space>
-              {browserStatus !== 'stopped' && (
-                <div style={{ marginTop: 10 }}>
-                  <Tag color={browserStatus === 'running' ? 'green' : 'orange'}>
-                    {browserStatus === 'running' ? '运行中' : '启动中'}
-                  </Tag>
-                  <Text type="secondary" style={{ fontSize: 12 }}>已拦截 {browserReqCount} 条请求</Text>
-                </div>
-              )}
             </Card>
           </div>
         )}
