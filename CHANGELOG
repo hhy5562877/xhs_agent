@@ -1,3 +1,4 @@
+- [2026-02-20 13:50] CHORE: Dockerfile 改为多阶段构建，集成前端构建，全面使用国内加速源 (Files: Dockerfile)
 - [2026-02-20 13:30] CHORE: 添加 Docker 支持，移除 playwright 生产依赖 (Files: Dockerfile, docker-compose.yml, .dockerignore, pyproject.toml)
 - [2026-02-20 12:54] FEAT: 多风格图片生成架构重构，支持 photo/poster 两种风格，AI 自动决策，并发独立生成每张图片 (Files: src/xhs_agent/api/schemas.py, src/xhs_agent/services/image_service.py, src/xhs_agent/services/text_service.py, src/xhs_agent/services/goal_service.py)
 - [2026-02-20 14:40] FIX: 改进用户信息获取的错误处理，添加详细日志帮助诊断 Cookie 问题 (Files: src/xhs_agent/services/upload_service.py, src/xhs_agent/services/xhs_http.py)
