@@ -206,6 +206,11 @@ async def execute_scheduled_post(post_id: int) -> None:
         images = await generate_images(
             prompts, aspect_ratio=post["aspect_ratio"], styles=styles
         )
+        failed = [
+            i + 1 for i, img in enumerate(images) if not img.url and not img.b64_json
+        ]
+        if failed:
+            raise ValueError(f"第 {failed} 张图片生成失败，取消上传")
         image_urls = [img.url or "" for img in images if img.url]
         images_json = json.dumps(
             [{"url": img.url, "b64_json": img.b64_json} for img in images]
