@@ -138,6 +138,11 @@ async def plan_operation(
 
     base_url = await get_setting("siliconflow_base_url")
     api_key = await get_setting("siliconflow_api_key")
+    model = await get_setting("text_model")
+
+    logger.debug(f"[ManagerAI] 请求参数: model={model!r}, goal={goal_title!r}")
+    logger.debug(f"[ManagerAI] system_prompt:\n{MANAGER_SYSTEM_PROMPT}")
+    logger.debug(f"[ManagerAI] user_prompt:\n{user_prompt}")
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
@@ -147,7 +152,7 @@ async def plan_operation(
                 "Content-Type": "application/json",
             },
             json={
-                "model": "claude-opus-4-6",
+                "model": model,
                 "messages": [
                     {"role": "system", "content": MANAGER_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},

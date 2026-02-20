@@ -1,0 +1,284 @@
+"""
+图片提示词 Agent
+
+标准 Agent 设计：
+  LLM 根据主题/风格/图片数量，从预设模板库中选择最合适的模板，
+  然后填充主题细节，返回最终的图片提示词列表。
+
+调用链：
+  xhs_agent.run()
+    → prompt_agent.build_image_prompts()   ← 本模块
+      → LLM 选模板 + 填充细节
+    → image_service.generate_images()
+"""
+
+import json
+import logging
+import httpx
+from ..config import get_setting
+from ..api.schemas import XHSContent
+
+logger = logging.getLogger("xhs_agent")
+
+# ─────────────────────────────────────────────
+# 预设提示词模板库
+# 每个模板包含：style（图片风格）、name（模板名）、description（适用场景）、template（提示词骨架）
+# ─────────────────────────────────────────────
+PROMPT_TEMPLATES: dict[str, dict] = {
+    # ── photo 类：真实照片风格 ──────────────────
+    "photo_lifestyle": {
+        "style": "photo",
+        "name": "生活日常",
+        "description": "适合日常生活记录、桌面物品、咖啡书本、居家场景，强调真实随手感",
+        "template": (
+            "手机随手误拍风格，极度真实的生活快照，{scene_detail}，"
+            "桌面或室内场景，物品自然散落，拍摄角度略微倾斜尴尬，主体偏移，"
+            "窗边自然光从侧面照入导致局部轻微过曝，"
+            "轻微手持抖动模糊感，轻微噪点，无滤镜无后期，"
+            "真实粗粝的生活质感，无任何刻意构图感，无任何文字"
+        ),
+    },
+    "photo_food": {
+        "style": "photo",
+        "name": "美食探店",
+        "description": "适合餐厅探店、菜品特写、咖啡甜品、街边小吃，强调食物真实感和环境氛围",
+        "template": (
+            "手机随手误拍风格，真实探店快照，{scene_detail}，"
+            "餐桌或吧台场景，餐具自然摆放，背景有餐厅环境虚化，"
+            "暖色调室内灯光，局部轻微过曝，"
+            "轻微手持抖动，画面略微倾斜，无滤镜无后期，"
+            "真实的食物质感和色泽，无任何文字"
+        ),
+    },
+    "photo_outdoor": {
+        "style": "photo",
+        "name": "户外街拍",
+        "description": "适合旅行打卡、街头场景、户外活动、城市探索，强调真实户外氛围",
+        "template": (
+            "手机随手误拍风格，真实户外快照，{scene_detail}，"
+            "户外自然光线，背景有街道或自然环境，人物或主体略微偏移，"
+            "阳光直射导致局部高光溢出，轻微运动模糊，"
+            "画面略微倾斜，轻微噪点，无滤镜无后期，"
+            "真实的户外氛围和光线质感，无任何文字"
+        ),
+    },
+    "photo_study": {
+        "style": "photo",
+        "name": "学习备考",
+        "description": "适合学习打卡、备考记录、书桌笔记、教材资料，强调学习氛围的真实感",
+        "template": (
+            "手机随手误拍风格，真实学习场景快照，{scene_detail}，"
+            "书桌场景，笔记本、教材、文具自然散落，"
+            "台灯或窗边自然光，局部轻微过曝，"
+            "拍摄角度略微倾斜，轻微手持抖动，轻微噪点，无滤镜无后期，"
+            "真实备考氛围，无任何文字"
+        ),
+    },
+    # ── poster 类：海报设计风格 ─────────────────
+    "poster_product": {
+        "style": "poster",
+        "name": "产品种草",
+        "description": "适合产品推荐、好物分享、美妆护肤、数码配件，强调产品视觉冲击力",
+        "template": (
+            "高端商业产品海报设计风格，{scene_detail}，"
+            "产品主体居中突出，背景采用渐变色调或纯色简洁背景，"
+            "色彩饱和度高、对比强烈，产品细节清晰锐利，"
+            "专业摄影棚光效，柔和高光和阴影，"
+            "整体构图精准，视觉层次分明，现代简约风格，无任何文字"
+        ),
+    },
+    "poster_knowledge": {
+        "style": "poster",
+        "name": "知识干货",
+        "description": "适合知识分享、技能教程、干货总结、信息图表，强调信息传达的视觉感",
+        "template": (
+            "高端知识类信息海报设计风格，{scene_detail}，"
+            "构图采用网格或模块化布局，视觉层次清晰，"
+            "配色以蓝色、绿色或橙色为主调，专业感强，"
+            "图标或插图元素点缀，背景简洁干净，"
+            "整体风格现代专业，适合小红书平台传播，无任何文字"
+        ),
+    },
+    "poster_motivation": {
+        "style": "poster",
+        "name": "励志激励",
+        "description": "适合励志内容、正能量分享、目标打卡、成长记录，强调视觉冲击和情绪感染力",
+        "template": (
+            "高端励志海报设计风格，{scene_detail}，"
+            "大面积强对比色块，视觉冲击力强，"
+            "暖色调为主（橙色、金色、红色），充满活力和能量感，"
+            "构图大胆，主体突出，背景有光晕或渐变效果，"
+            "整体风格热烈有力，适合小红书平台传播，无任何文字"
+        ),
+    },
+    "poster_event": {
+        "style": "poster",
+        "name": "活动推广",
+        "description": "适合节日活动、品牌推广、限时优惠、打卡挑战，强调节日感和活动氛围",
+        "template": (
+            "高端活动推广海报设计风格，{scene_detail}，"
+            "节日感或活动氛围浓厚，色彩热烈饱满，"
+            "主体居中，装饰元素丰富（彩带、光效、几何图形），"
+            "背景有渐变或纹理质感，整体构图饱满有张力，"
+            "现代设计感强，适合小红书平台传播，无任何文字"
+        ),
+    },
+}
+
+# ─────────────────────────────────────────────
+# Agent System Prompt
+# ─────────────────────────────────────────────
+_AGENT_SYSTEM_PROMPT = """你是一位专业的图片提示词工程师，专门为小红书图文笔记生成高质量的图片提示词。
+
+你的任务：
+1. 根据笔记主题、风格和每张图片的用途，从可用模板中选择最合适的模板
+2. 将模板中的 {scene_detail} 替换为与主题高度相关的具体场景描述（30-50字）
+3. 返回最终的提示词列表
+
+可用模板列表（JSON格式）：
+{templates_json}
+
+输出必须是严格的 JSON 格式：
+{
+  "selections": [
+    {
+      "template_key": "模板key",
+      "scene_detail": "具体场景描述，30-50字，全部中文，无英文无拼音",
+      "final_prompt": "完整的最终提示词（模板填充后的结果）"
+    },
+    ...
+  ]
+}
+
+规则：
+- scene_detail 必须全部用中文，严禁出现任何英文单词、字母、拼音
+- 每张图片选择不同的模板（避免重复）
+- 根据图片在笔记中的位置和用途选择最合适的模板
+- final_prompt 是将 scene_detail 填入模板后的完整提示词
+"""
+
+
+async def build_image_prompts(
+    topic: str,
+    style: str,
+    content: XHSContent,
+    image_count: int,
+) -> tuple[list[str], list[str]]:
+    """
+    Agent 主入口：根据已生成的笔记内容，为每张图片选择最合适的模板并填充细节。
+
+    Args:
+        topic: 笔记主题
+        style: 内容风格
+        content: 已生成的笔记内容（含 image_styles 决策）
+        image_count: 需要生成的图片数量
+
+    Returns:
+        (prompts, styles): 最终提示词列表 和 对应风格列表
+    """
+    # 根据 content.image_styles 过滤可用模板，优先匹配风格
+    image_styles = content.image_styles[:image_count] if content.image_styles else []
+    # 补齐 styles（不足时默认 photo）
+    while len(image_styles) < image_count:
+        image_styles.append("photo")
+
+    # 构建模板摘要（只展示与所需风格相关的模板，减少 token）
+    needed_styles = set(image_styles)
+    filtered_templates = {
+        k: {
+            "name": v["name"],
+            "description": v["description"],
+            "style": v["style"],
+            "template": v["template"],
+        }
+        for k, v in PROMPT_TEMPLATES.items()
+        if v["style"] in needed_styles
+    }
+
+    templates_json = json.dumps(filtered_templates, ensure_ascii=False, indent=2)
+    system_prompt = _AGENT_SYSTEM_PROMPT.replace("{templates_json}", templates_json)
+
+    user_prompt = (
+        f"笔记主题：{topic}\n"
+        f"内容风格：{style}\n"
+        f"笔记标题：{content.title}\n"
+        f"笔记正文摘要：{content.body[:100]}...\n"
+        f"话题标签：{', '.join(content.hashtags[:5])}\n"
+        f"需要生成图片数量：{image_count}\n"
+        f"每张图片的风格决策：{image_styles}\n\n"
+        f"请为每张图片选择最合适的模板并填充场景细节。"
+    )
+
+    logger.debug(
+        f"[PromptAgent] 开始选模板，主题={topic!r}，图片数={image_count}，风格={image_styles}"
+    )
+    logger.debug(
+        f"[PromptAgent] 可用模板数={len(filtered_templates)}，模板keys={list(filtered_templates.keys())}"
+    )
+
+    base_url = await get_setting("siliconflow_base_url")
+    api_key = await get_setting("siliconflow_api_key")
+    model = await get_setting("text_model")
+
+    logger.debug(f"[PromptAgent] system_prompt:\n{system_prompt}")
+    logger.debug(f"[PromptAgent] user_prompt:\n{user_prompt}")
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(
+            f"{base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.7,
+                "max_tokens": 2048,
+                "response_format": {"type": "json_object"},
+            },
+        )
+        response.raise_for_status()
+
+    data = response.json()
+    raw_content = data["choices"][0]["message"]["content"]
+    logger.debug(f"[PromptAgent] LLM 原始响应: {raw_content}")
+
+    parsed = json.loads(raw_content)
+    selections = parsed.get("selections", [])
+
+    prompts: list[str] = []
+    styles: list[str] = []
+
+    for i, sel in enumerate(selections[:image_count]):
+        template_key = sel.get("template_key", "")
+        final_prompt = sel.get("final_prompt", "")
+        selected_style = PROMPT_TEMPLATES.get(template_key, {}).get(
+            "style", image_styles[i] if i < len(image_styles) else "photo"
+        )
+
+        logger.debug(
+            f"[PromptAgent] 图片{i + 1}: 模板={template_key!r}，风格={selected_style!r}，提示词={final_prompt[:60]}..."
+        )
+
+        prompts.append(final_prompt)
+        styles.append(selected_style)
+
+    # 数量不足时用原始 image_prompts 兜底
+    if len(prompts) < image_count:
+        fallback_prompts = content.image_prompts
+        for i in range(len(prompts), image_count):
+            fallback = (
+                fallback_prompts[i]
+                if i < len(fallback_prompts)
+                else f"{topic}相关场景，真实生活质感"
+            )
+            logger.warning(f"[PromptAgent] 图片{i + 1} 未获得模板结果，使用兜底提示词")
+            prompts.append(fallback)
+            styles.append(image_styles[i] if i < len(image_styles) else "photo")
+
+    logger.info(f"[PromptAgent] 完成，共生成 {len(prompts)} 条提示词")
+    return prompts, styles

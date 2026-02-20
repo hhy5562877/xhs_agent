@@ -205,6 +205,7 @@ def get_user_recent_notes(cookie: str, user_id: str = "", limit: int = 20) -> li
         return []
     try:
         notes = client.get_user_all_notes(user_id)
+        logger.debug(f"get_user_all_notes 原始返回 {len(notes)} 条: {notes}")
     except Exception as e:
         err_str = str(e)
         if "验证码" in err_str or "Verify" in err_str:

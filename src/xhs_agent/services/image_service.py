@@ -55,10 +55,14 @@ def _build_poster_prompt(prompt: str) -> str:
 
 
 async def _call_image_api(prompt: str, size: str) -> GeneratedImage:
-    """调用即梦4 API 生成单张图片"""
     base_url = await get_setting("image_api_base_url")
     api_key = await get_setting("image_api_key")
     model = await get_setting("image_model")
+
+    logger.debug(
+        f"[ImageAPI] 请求参数: model={model!r}, size={size!r}, prompt长度={len(prompt)}字"
+    )
+    logger.debug(f"[ImageAPI] 完整提示词: {prompt}")
 
     async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(
@@ -88,9 +92,12 @@ async def _call_image_api(prompt: str, size: str) -> GeneratedImage:
     data = response.json()
     items = data.get("data", [])
     if not items:
+        logger.warning(f"[ImageAPI] 响应 data 为空: {data}")
         return GeneratedImage()
     item = items[0]
-    return GeneratedImage(url=item.get("url"), b64_json=item.get("b64_json"))
+    url = item.get("url")
+    logger.debug(f"[ImageAPI] 生成成功，url={url[:80] if url else None}")
+    return GeneratedImage(url=url, b64_json=item.get("b64_json"))
 
 
 async def generate_images(

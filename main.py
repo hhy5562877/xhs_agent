@@ -21,21 +21,35 @@ def setup_logging():
     os.makedirs("log", exist_ok=True)
     root = logging.getLogger()
     if root.handlers:
-        return  # 已初始化，避免 reload 时重复添加
-    root.setLevel(logging.INFO)
-    fmt = logging.Formatter(
+        return
+    root.setLevel(logging.DEBUG)
+
+    fmt_file = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    fmt_console = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
+
     file_handler = TimedRotatingFileHandler(
         "log/xhs_agent.log", when="midnight", backupCount=30, encoding="utf-8"
     )
-    file_handler.setFormatter(fmt)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(fmt_file)
+
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(fmt)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(fmt_console)
+
     root.addHandler(file_handler)
     root.addHandler(console_handler)
-    logging.getLogger("httpx").setLevel(logging.INFO)
+
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
 setup_logging()

@@ -4,23 +4,28 @@
 
 - Base URL: `http://localhost:8000`
 - Content-Type: `application/json`
+- 所有接口路径前缀：`/api`
 
 ---
 
-## POST /api/generate
+## 内容生成
+
+### POST /api/generate
 
 生成小红书图文内容及配图。
 
-### 请求参数 (Body)
+调用链：text_service → prompt_agent（选模板+填充细节）→ image_service（并发生成图片）
+
+**请求参数**
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | topic | string | ✅ | - | 内容主题，例如"秋日咖啡馆探店" |
 | style | string | ❌ | 生活方式 | 内容风格 |
-| aspect_ratio | string | ❌ | 3:4 | 图片比例，可选：1:1 / 4:5 / 3:4 / 9:16 / 16:9 / 4:3 / 2:3 / 3:2 / 21:9 |
+| aspect_ratio | string | ❌ | 3:4 | 图片比例：1:1 / 4:5 / 3:4 / 9:16 / 16:9 / 4:3 / 2:3 / 3:2 / 21:9 |
 | image_count | int | ❌ | 1 | 生成图片数量，范围 1-4 |
 
-### 响应示例
+**响应示例**
 
 ```json
 {
@@ -28,7 +33,8 @@
     "title": "☕ 秋日最治愈的咖啡馆，藏在这条小巷里",
     "body": "最近发现了一家超级治愈的咖啡馆...",
     "hashtags": ["咖啡探店", "秋日氛围", "城市漫游"],
-    "image_prompts": ["cozy autumn cafe interior, warm lighting, wooden tables..."]
+    "image_prompts": ["手机随手误拍风格，极度真实的生活快照..."],
+    "image_styles": ["photo"]
   },
   "images": [
     { "url": "https://...", "b64_json": null }
@@ -36,58 +42,229 @@
 }
 ```
 
-### 错误响应
-
-```json
-{ "detail": "错误信息" }
-```
-
 ---
 
-## POST /api/upload
+### POST /api/upload
 
 将已生成的图文内容发布到小红书。
 
-### 请求参数 (Body)
+**请求参数**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| cookie | string | ✅ | 小红书网页版 Cookie |
+| account_id | string | ✅ | 账号 ID（从账号管理获取） |
 | title | string | ✅ | 笔记标题 |
 | desc | string | ✅ | 笔记正文（含话题标签） |
 | image_urls | list[string] | ✅ | 图片 URL 列表 |
-| hashtags | list[string] | ❌ | 话题标签列表，用于匹配小红书话题 |
+| hashtags | list[string] | ❌ | 话题标签列表 |
 
-### 响应示例
+**响应示例**
 
 ```json
 { "success": true, "note_id": "64fa75a9000000001f0076bf", "detail": "" }
 ```
 
-### 说明
-
-- `account_id` 和 `cookie` 二选一，优先使用 `account_id`
-- 上传依赖 Playwright + stealth.min.js，首次运行需安装 Chromium：`uv run playwright install chromium`
-
 ---
 
-## GET /api/accounts
+## 账号管理
+
+### GET /api/accounts
 
 获取已保存账号列表（Cookie 脱敏显示）。
 
-## POST /api/accounts
+**响应示例**
+
+```json
+[
+  {
+    "id": "acc_001",
+    "name": "我的账号",
+    "nickname": "小红书用户",
+    "avatar_url": "https://...",
+    "fans": "1234",
+    "created_at": "2026-02-20 10:00"
+  }
+]
+```
+
+---
+
+### POST /api/accounts
 
 新增账号。
 
-| 字段 | 类型 | 必填 |
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| name | string | ✅ | 账号备注名 |
+| cookie | string | ✅ | 小红书网页版 Cookie |
+
+---
+
+### PATCH /api/accounts/{account_id}
+
+更新账号名称或 Cookie（字段均可选）。
+
+| 字段 | 类型 | 说明 |
 |------|------|------|
-| name | string | ✅ |
-| cookie | string | ✅ |
+| name | string | 新备注名 |
+| cookie | string | 新 Cookie |
 
-## PATCH /api/accounts/{account_id}
+---
 
-更新账号名称或 Cookie（字段可选）。
-
-## DELETE /api/accounts/{account_id}
+### DELETE /api/accounts/{account_id}
 
 删除账号。
+
+---
+
+### GET /api/accounts/{account_id}/check
+
+检查账号 Cookie 有效性，同步账号昵称、头像、粉丝数。
+
+**响应示例**
+
+```json
+{ "valid": true, "nickname": "你我都有美好的未来", "fans": "1234" }
+```
+
+---
+
+### POST /api/accounts/preview
+
+预览账号信息（不保存），用于添加账号前验证 Cookie。
+
+| 字段 | 类型 | 必填 |
+|------|------|------|
+| cookie | string | ✅ |
+
+---
+
+## 运营目标
+
+### GET /api/goals
+
+获取所有运营目标列表。
+
+---
+
+### POST /api/goals
+
+创建运营目标。
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| account_id | string | ✅ | 绑定账号 ID |
+| title | string | ✅ | 目标标题 |
+| description | string | ✅ | 目标详细描述 |
+| style | string | ✅ | 内容风格 |
+| post_freq | int | ✅ | 每日发布频率 |
+
+---
+
+### PATCH /api/goals/{goal_id}
+
+更新运营目标信息。
+
+---
+
+### DELETE /api/goals/{goal_id}
+
+删除运营目标及其所有排期。
+
+---
+
+### PATCH /api/goals/{goal_id}/toggle
+
+启用/停用运营目标。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| active | bool | true=启用，false=停用 |
+
+---
+
+### POST /api/goals/{goal_id}/plan
+
+触发总管 AI 分析账号历史数据，生成并保存 7 天发布计划。同一目标同时只允许一个规划请求（429 防重复）。
+
+**响应示例**
+
+```json
+{
+  "analysis": "根据账号近期数据分析，建议...",
+  "posts": [
+    {
+      "id": 1,
+      "topic": "秋日咖啡馆探店",
+      "scheduled_at": "2026-02-21 20:00",
+      "status": "pending"
+    }
+  ]
+}
+```
+
+---
+
+### GET /api/goals/{goal_id}/posts
+
+获取指定目标的所有排期列表。
+
+---
+
+## 排期管理
+
+### GET /api/posts
+
+获取所有排期列表。
+
+---
+
+### POST /api/posts/{post_id}/run
+
+手动立即执行指定排期任务（跳过定时等待）。
+
+---
+
+## 系统配置
+
+### GET /api/config
+
+获取所有系统配置项（API Key 等敏感字段脱敏显示）。
+
+**响应示例**
+
+```json
+{
+  "siliconflow_api_key": "sk-****",
+  "siliconflow_base_url": "https://api.siliconflow.cn/v1",
+  "text_model": "Qwen/Qwen2.5-72B-Instruct",
+  "image_api_key": "****",
+  "image_api_base_url": "https://...",
+  "image_model": "doubao-seedream-4-5-251128",
+  "wxpusher_app_token": "",
+  "wxpusher_uid": ""
+}
+```
+
+---
+
+### PUT /api/config
+
+更新系统配置，传入需要修改的字段即可（其余字段不变）。
+
+**请求示例**
+
+```json
+{
+  "siliconflow_api_key": "sk-xxxx",
+  "text_model": "Qwen/Qwen2.5-72B-Instruct"
+}
+```
+
+---
+
+## 其他
+
+### GET /api/proxy/image?url={url}
+
+图片代理接口，用于前端展示小红书图片（绕过防盗链）。

@@ -165,8 +165,8 @@ async def list_scheduled_posts(goal_id: int | None = None) -> list[dict]:
 
 
 async def execute_scheduled_post(post_id: int) -> None:
-    """执行一条定时发布任务"""
     from ..services.notification_service import get_notification_service
+    from ..agent.prompt_agent import build_image_prompts
 
     notification = get_notification_service()
 
@@ -176,33 +176,43 @@ async def execute_scheduled_post(post_id: int) -> None:
         ) as cur:
             post = await cur.fetchone()
         if not post or post["status"] != "pending":
+            logger.debug(
+                f"定时任务 #{post_id} 跳过: post={dict(post) if post else None}"
+            )
             return
         await db.execute(
             "UPDATE scheduled_posts SET status = 'running' WHERE id = ?", (post_id,)
         )
         await db.commit()
 
+    logger.info(
+        f"定时任务 #{post_id} 开始执行: topic={post['topic']!r}, style={post['style']!r}, image_count={post['image_count']}"
+    )
+
     tmp_paths: list[str] = []
     try:
+        # 1. 生成文本内容
         content = await generate_xhs_content(
             post["topic"], post["style"], post["image_count"]
         )
-        prompts = content.image_prompts[: post["image_count"]]
-        styles = (
-            content.image_styles[: post["image_count"]]
-            if content.image_styles
-            else None
-        )
         logger.info(
-            "定时任务 #%d 图片风格决策: %s",
-            post_id,
-            ", ".join(
-                f"第{i + 1}张=[{s}] {p[:20]}..."
-                for i, (p, s) in enumerate(
-                    zip(prompts, styles or ["photo"] * len(prompts))
-                )
-            ),
+            f"定时任务 #{post_id} 文本生成完成: title={content.title!r}, image_styles={content.image_styles}"
         )
+        logger.debug(
+            f"定时任务 #{post_id} 文本详情: body长度={len(content.body)}字, hashtags={content.hashtags}, image_prompts={content.image_prompts}"
+        )
+
+        # 2. PromptAgent 选模板 + 填充细节
+        prompts, styles = await build_image_prompts(
+            topic=post["topic"],
+            style=post["style"],
+            content=content,
+            image_count=post["image_count"],
+        )
+        logger.info(f"定时任务 #{post_id} 提示词生成完成: styles={styles}")
+        logger.debug(f"定时任务 #{post_id} 完整提示词: {prompts}")
+
+        # 3. 生成图片
         images = await generate_images(
             prompts, aspect_ratio=post["aspect_ratio"], styles=styles
         )
@@ -215,6 +225,9 @@ async def execute_scheduled_post(post_id: int) -> None:
         images_json = json.dumps(
             [{"url": img.url, "b64_json": img.b64_json} for img in images]
         )
+        logger.debug(
+            f"定时任务 #{post_id} 图片生成完成: urls={[u[:60] for u in image_urls]}"
+        )
 
         from ..services.account_service import get_cookie
 
@@ -226,9 +239,13 @@ async def execute_scheduled_post(post_id: int) -> None:
         if not cookie:
             raise ValueError(f"账号 Cookie 不存在 (account_id={account_id!r})")
 
+        # 4. 下载图片到临时文件
         tmp_paths = await asyncio.gather(
             *[download_image_to_tmp(u) for u in image_urls if u]
         )
+        logger.debug(f"定时任务 #{post_id} 图片下载完成: tmp_paths={tmp_paths}")
+
+        # 5. 上传笔记
         desc = content.body + "\n\n" + " ".join(f"#{t}" for t in content.hashtags)
         result = await asyncio.to_thread(
             upload_image_note,
@@ -239,6 +256,7 @@ async def execute_scheduled_post(post_id: int) -> None:
             content.hashtags,
         )
         note_id = result.get("note_id") if isinstance(result, dict) else None
+        logger.debug(f"定时任务 #{post_id} 上传结果: {result}")
 
         async with get_db() as db:
             await db.execute(

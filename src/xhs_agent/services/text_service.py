@@ -1,7 +1,10 @@
 import json
+import logging
 import httpx
 from ..config import get_setting
 from ..api.schemas import XHSContent
+
+logger = logging.getLogger("xhs_agent")
 
 SYSTEM_PROMPT = """你是一位专业的小红书内容创作者，擅长创作爆款图文笔记。
 你的任务是根据用户给出的主题，生成一篇完整的小红书笔记内容。
@@ -55,12 +58,17 @@ poster 提示词示例：
 
 
 async def generate_xhs_content(topic: str, style: str, image_count: int) -> XHSContent:
-    """调用 SiliconFlow API 生成小红书图文内容"""
     user_prompt = f"主题：{topic}\n风格：{style}\n需要生成 {image_count} 张配图的提示词"
 
     base_url = await get_setting("siliconflow_base_url")
     api_key = await get_setting("siliconflow_api_key")
     model = await get_setting("text_model")
+
+    logger.debug(
+        f"[TextService] 请求参数: model={model!r}, topic={topic!r}, style={style!r}, image_count={image_count}"
+    )
+    logger.debug(f"[TextService] system_prompt:\n{SYSTEM_PROMPT}")
+    logger.debug(f"[TextService] user_prompt:\n{user_prompt}")
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
@@ -84,6 +92,8 @@ async def generate_xhs_content(topic: str, style: str, image_count: int) -> XHSC
 
     data = response.json()
     raw_content = data["choices"][0]["message"]["content"]
+    logger.debug(f"[TextService] LLM 原始响应: {raw_content}")
+
     parsed = json.loads(raw_content)
 
     return XHSContent(
