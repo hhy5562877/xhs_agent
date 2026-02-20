@@ -19,7 +19,7 @@ async def run(request: GenerateRequest) -> GenerateResponse:
         image_count=request.image_count,
     )
     logger.info(
-        f"文本生成完成，标题={content.title!r}，风格决策={content.image_styles}"
+        f"文本生成完成，标题={content.title!r}，统一风格决策={content.image_styles}"
     )
     logger.debug(
         f"文本内容详情: body长度={len(content.body)}字，hashtags={content.hashtags}，原始image_prompts={content.image_prompts}"

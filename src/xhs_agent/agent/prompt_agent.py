@@ -164,26 +164,12 @@ async def build_image_prompts(
     content: XHSContent,
     image_count: int,
 ) -> tuple[list[str], list[str]]:
-    """
-    Agent 主入口：根据已生成的笔记内容，为每张图片选择最合适的模板并填充细节。
+    # 取整篇笔记的统一风格（image_styles 列表中只有一个值）
+    unified_style = content.image_styles[0] if content.image_styles else "photo"
+    if unified_style not in ("photo", "poster"):
+        unified_style = "photo"
 
-    Args:
-        topic: 笔记主题
-        style: 内容风格
-        content: 已生成的笔记内容（含 image_styles 决策）
-        image_count: 需要生成的图片数量
-
-    Returns:
-        (prompts, styles): 最终提示词列表 和 对应风格列表
-    """
-    # 根据 content.image_styles 过滤可用模板，优先匹配风格
-    image_styles = content.image_styles[:image_count] if content.image_styles else []
-    # 补齐 styles（不足时默认 photo）
-    while len(image_styles) < image_count:
-        image_styles.append("photo")
-
-    # 构建模板摘要（只展示与所需风格相关的模板，减少 token）
-    needed_styles = set(image_styles)
+    # 只加载与统一风格匹配的模板
     filtered_templates = {
         k: {
             "name": v["name"],
@@ -192,7 +178,7 @@ async def build_image_prompts(
             "template": v["template"],
         }
         for k, v in PROMPT_TEMPLATES.items()
-        if v["style"] in needed_styles
+        if v["style"] == unified_style
     }
 
     templates_json = json.dumps(filtered_templates, ensure_ascii=False, indent=2)
@@ -205,12 +191,12 @@ async def build_image_prompts(
         f"笔记正文摘要：{content.body[:100]}...\n"
         f"话题标签：{', '.join(content.hashtags[:5])}\n"
         f"需要生成图片数量：{image_count}\n"
-        f"每张图片的风格决策：{image_styles}\n\n"
-        f"请为每张图片选择最合适的模板并填充场景细节。"
+        f"整篇笔记统一视觉风格：{unified_style}\n\n"
+        f"请为每张图片从上述同类模板中选择不同的子模板并填充场景细节，确保所有图片风格统一。"
     )
 
     logger.debug(
-        f"[PromptAgent] 开始选模板，主题={topic!r}，图片数={image_count}，风格={image_styles}"
+        f"[PromptAgent] 开始选模板，主题={topic!r}，图片数={image_count}，统一风格={unified_style!r}"
     )
     logger.debug(
         f"[PromptAgent] 可用模板数={len(filtered_templates)}，模板keys={list(filtered_templates.keys())}"
@@ -265,9 +251,8 @@ async def build_image_prompts(
         )
 
         prompts.append(final_prompt)
-        styles.append(selected_style)
+        styles.append(unified_style)
 
-    # 数量不足时用原始 image_prompts 兜底
     if len(prompts) < image_count:
         fallback_prompts = content.image_prompts
         for i in range(len(prompts), image_count):
@@ -278,7 +263,9 @@ async def build_image_prompts(
             )
             logger.warning(f"[PromptAgent] 图片{i + 1} 未获得模板结果，使用兜底提示词")
             prompts.append(fallback)
-            styles.append(image_styles[i] if i < len(image_styles) else "photo")
+            styles.append(unified_style)
 
-    logger.info(f"[PromptAgent] 完成，共生成 {len(prompts)} 条提示词")
+    logger.info(
+        f"[PromptAgent] 完成，共生成 {len(prompts)} 条提示词，统一风格={unified_style!r}"
+    )
     return prompts, styles

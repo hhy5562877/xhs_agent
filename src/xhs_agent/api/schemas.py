@@ -20,7 +20,7 @@ class XHSContent(BaseModel):
     image_prompts: list[str]
     image_styles: list[Literal["photo", "poster"]] = Field(
         default_factory=list,
-        description="每张图片对应的风格：photo=真实照片，poster=海报设计",
+        description="整篇笔记的统一视觉风格，列表中只有一个值：photo=真实照片，poster=海报设计",
     )
 
 
