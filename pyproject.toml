@@ -3,7 +3,7 @@ name = "xhs-agent"
 version = "0.1.0"
 description = "小红书内容自动生成 Agent"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",

@@ -1,3 +1,4 @@
+- [2026-02-20 14:00] CHORE: 降级 Python 要求至 3.12，重新生成 uv.lock (Files: .python-version, pyproject.toml, uv.lock)
 - [2026-02-20 13:50] CHORE: Dockerfile 改为多阶段构建，集成前端构建，全面使用国内加速源 (Files: Dockerfile)
 - [2026-02-20 13:30] CHORE: 添加 Docker 支持，移除 playwright 生产依赖 (Files: Dockerfile, docker-compose.yml, .dockerignore, pyproject.toml)
 - [2026-02-20 12:54] FEAT: 多风格图片生成架构重构，支持 photo/poster 两种风格，AI 自动决策，并发独立生成每张图片 (Files: src/xhs_agent/api/schemas.py, src/xhs_agent/services/image_service.py, src/xhs_agent/services/text_service.py, src/xhs_agent/services/goal_service.py)
