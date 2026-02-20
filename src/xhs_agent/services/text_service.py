@@ -1,6 +1,6 @@
 import json
 import httpx
-from ..config import settings
+from ..config import get_setting
 from ..api.schemas import XHSContent
 
 SYSTEM_PROMPT = """你是一位专业的小红书内容创作者，擅长创作爆款图文笔记。
@@ -62,15 +62,19 @@ async def generate_xhs_content(topic: str, style: str, image_count: int) -> XHSC
     """调用 SiliconFlow API 生成小红书图文内容"""
     user_prompt = f"主题：{topic}\n风格：{style}\n需要生成 {image_count} 张配图的提示词"
 
+    base_url = await get_setting("siliconflow_base_url")
+    api_key = await get_setting("siliconflow_api_key")
+    model = await get_setting("text_model")
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
-            f"{settings.siliconflow_base_url}/chat/completions",
+            f"{base_url}/chat/completions",
             headers={
-                "Authorization": f"Bearer {settings.siliconflow_api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": settings.text_model,
+                "model": model,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},

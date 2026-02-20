@@ -56,9 +56,16 @@ async def upload(request: UploadRequest):
     tmp_paths: list[str] = []
     try:
         logger.info(f"下载 {len(request.image_urls)} 张图片...")
-        tmp_paths = await asyncio.gather(*[download_image_to_tmp(u) for u in request.image_urls])
+        tmp_paths = await asyncio.gather(
+            *[download_image_to_tmp(u) for u in request.image_urls]
+        )
         result = await asyncio.to_thread(
-            upload_image_note, cookie, request.title, request.desc, list(tmp_paths), request.hashtags,
+            upload_image_note,
+            cookie,
+            request.title,
+            request.desc,
+            list(tmp_paths),
+            request.hashtags,
         )
         note_id = result.get("note_id") if isinstance(result, dict) else None
         return UploadResponse(success=True, note_id=note_id)
@@ -87,6 +94,7 @@ class AccountPreview(BaseModel):
 async def preview_account(body: AccountPreview):
     """传入 cookie，返回小红书账号信息（不保存）"""
     from ..services.upload_service import fetch_user_info
+
     try:
         info = await asyncio.to_thread(fetch_user_info, body.cookie)
         return info
@@ -138,7 +146,9 @@ async def get_goals(account_id: str | None = None):
 
 @router.post("/goals", status_code=201)
 async def create_goal(body: GoalCreate):
-    return await goal_service.create_goal(body.account_id, body.title, body.description, body.style, body.post_freq)
+    return await goal_service.create_goal(
+        body.account_id, body.title, body.description, body.style, body.post_freq
+    )
 
 
 @router.delete("/goals/{goal_id}", status_code=204)
@@ -164,19 +174,29 @@ class GoalUpdate(BaseModel):
 
 @router.patch("/goals/{goal_id}")
 async def update_goal(goal_id: int, body: GoalUpdate):
-    if not await goal_service.update_goal(goal_id, body.title, body.description, body.style, body.post_freq, body.account_id):
+    if not await goal_service.update_goal(
+        goal_id,
+        body.title,
+        body.description,
+        body.style,
+        body.post_freq,
+        body.account_id,
+    ):
         raise HTTPException(status_code=404, detail="目标不存在")
     return {"ok": True}
 
 
 # ── AI 规划 + 排期 ────────────────────────────────────
 import asyncio as _asyncio
+
 _plan_locks: dict[int, _asyncio.Lock] = {}
+
 
 def _get_plan_lock(goal_id: int) -> _asyncio.Lock:
     if goal_id not in _plan_locks:
         _plan_locks[goal_id] = _asyncio.Lock()
     return _plan_locks[goal_id]
+
 
 @router.post("/goals/{goal_id}/plan")
 async def plan_goal(goal_id: int):
@@ -195,11 +215,18 @@ async def plan_goal(goal_id: int):
             raise HTTPException(status_code=404, detail="账号不存在或 Cookie 已失效")
 
         accounts = await account_service.list_accounts()
-        xhs_user_id = next((a["xhs_user_id"] for a in accounts if a["id"] == account_id), "")
+        xhs_user_id = next(
+            (a["xhs_user_id"] for a in accounts if a["id"] == account_id), ""
+        )
 
         try:
             plan = await plan_operation(
-                goal["title"], goal["description"], goal["style"], goal["post_freq"], cookie, user_id=xhs_user_id
+                goal["title"],
+                goal["description"],
+                goal["style"],
+                goal["post_freq"],
+                cookie,
+                user_id=xhs_user_id,
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"AI 规划失败: {e}")
@@ -217,7 +244,9 @@ async def plan_goal(goal_id: int):
 
         created_posts = []
         for item in plan.get("weekly_plan", []):
-            scheduled_at = calc_scheduled_time(item["day_offset"], item["hour"], item["minute"])
+            scheduled_at = calc_scheduled_time(
+                item["day_offset"], item["hour"], item["minute"]
+            )
             post = await goal_service.create_scheduled_post(
                 goal_id=goal_id,
                 account_id=account_id,
@@ -249,15 +278,23 @@ async def run_post_now(post_id: int):
     """立即执行一条排期任务（不管 scheduled_at）"""
     from ..db import get_db as _get_db
     from ..services.goal_service import execute_scheduled_post
+
     async with _get_db() as db:
-        async with db.execute("SELECT id, status FROM scheduled_posts WHERE id = ?", (post_id,)) as cur:
+        async with db.execute(
+            "SELECT id, status FROM scheduled_posts WHERE id = ?", (post_id,)
+        ) as cur:
             row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="排期不存在")
     if row["status"] not in ("pending", "failed"):
-        raise HTTPException(status_code=400, detail=f"当前状态 {row['status']} 不可立即执行")
+        raise HTTPException(
+            status_code=400, detail=f"当前状态 {row['status']} 不可立即执行"
+        )
     async with _get_db() as db:
-        await db.execute("UPDATE scheduled_posts SET status='pending', error=NULL WHERE id=?", (post_id,))
+        await db.execute(
+            "UPDATE scheduled_posts SET status='pending', error=NULL WHERE id=?",
+            (post_id,),
+        )
         await db.commit()
     asyncio.create_task(execute_scheduled_post(post_id))
     return {"ok": True, "post_id": post_id}
@@ -269,8 +306,12 @@ async def proxy_image(url: str):
     if not url.startswith("https://sns-avatar"):
         raise HTTPException(status_code=400, detail="不支持的图片地址")
     async with httpx.AsyncClient() as client:
-        resp = await client.get(url, headers={"Referer": "https://www.xiaohongshu.com"}, timeout=10)
-    return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/webp"))
+        resp = await client.get(
+            url, headers={"Referer": "https://www.xiaohongshu.com"}, timeout=10
+        )
+    return Response(
+        content=resp.content, media_type=resp.headers.get("content-type", "image/webp")
+    )
 
 
 # ── 浏览器服务 ────────────────────────────────────────
@@ -282,6 +323,7 @@ class BrowserStartRequest(BaseModel):
 async def browser_start(body: BrowserStartRequest):
     """启动可视化 Playwright 浏览器，注入账号 cookie"""
     from ..services import browser_service
+
     cookie = await account_service.get_cookie(body.account_id)
     if not cookie:
         raise HTTPException(status_code=404, detail="账号不存在")
@@ -292,6 +334,7 @@ async def browser_start(body: BrowserStartRequest):
 @router.post("/browser/stop")
 async def browser_stop():
     from ..services import browser_service
+
     await browser_service.stop_browser()
     return {"ok": True}
 
@@ -299,11 +342,64 @@ async def browser_stop():
 @router.get("/browser/status")
 async def browser_status():
     from ..services import browser_service
+
     return browser_service.get_status()
 
 
 @router.get("/browser/requests")
 async def browser_requests():
-    """获取浏览器拦截到的请求日志"""
     from ..services import browser_service
+
     return browser_service.get_request_log()
+
+
+# ── 系统配置 ──────────────────────────────────────────
+from ..db import get_config, set_config as _set_config
+
+_CONFIG_KEYS = [
+    "siliconflow_api_key",
+    "siliconflow_base_url",
+    "text_model",
+    "image_api_key",
+    "image_api_base_url",
+    "image_model",
+    "wxpusher_app_token",
+    "wxpusher_uids",
+]
+
+_CONFIG_DEFAULTS = {
+    "siliconflow_api_key": "",
+    "siliconflow_base_url": "https://api.siliconflow.cn/v1",
+    "text_model": "Qwen/Qwen3-VL-32B-Instruct",
+    "image_api_key": "",
+    "image_api_base_url": "",
+    "image_model": "doubao-seedream-4-5-251128",
+    "wxpusher_app_token": "",
+    "wxpusher_uids": "",
+}
+
+
+@router.get("/config")
+async def get_system_config():
+    result = {}
+    for key in _CONFIG_KEYS:
+        result[key] = await get_config(key, _CONFIG_DEFAULTS.get(key, ""))
+    return result
+
+
+class ConfigUpdate(BaseModel):
+    siliconflow_api_key: str = ""
+    siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
+    text_model: str = "Qwen/Qwen3-VL-32B-Instruct"
+    image_api_key: str = ""
+    image_api_base_url: str = ""
+    image_model: str = "doubao-seedream-4-5-251128"
+    wxpusher_app_token: str = ""
+    wxpusher_uids: str = ""
+
+
+@router.put("/config")
+async def update_system_config(body: ConfigUpdate):
+    for key in _CONFIG_KEYS:
+        await _set_config(key, getattr(body, key, ""))
+    return {"ok": True}

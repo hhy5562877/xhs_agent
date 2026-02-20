@@ -60,5 +60,28 @@ async def init_db() -> None:
             FOREIGN KEY (goal_id) REFERENCES operation_goals(id),
             FOREIGN KEY (account_id) REFERENCES accounts(id)
         );
+
+        CREATE TABLE IF NOT EXISTS system_config (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         """)
+        await db.commit()
+
+
+async def get_config(key: str, default: str = "") -> str:
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT value FROM system_config WHERE key = ?", (key,)
+        ) as cur:
+            row = await cur.fetchone()
+    return row["value"] if row else default
+
+
+async def set_config(key: str, value: str) -> None:
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO system_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
         await db.commit()

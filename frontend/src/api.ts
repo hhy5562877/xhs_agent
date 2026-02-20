@@ -1,6 +1,6 @@
 import type {
   GenerateRequest, GenerateResponse, Account, AccountPreview, UploadRequest, UploadResponse,
-  Goal, ScheduledPost, PlanResult,
+  Goal, ScheduledPost, PlanResult, SystemConfig,
 } from './types'
 
 const BASE = '/api'
@@ -46,3 +46,7 @@ export const startBrowser = (account_id: string) => post('/browser/start', { acc
 export const stopBrowser = () => req('/browser/stop', { method: 'POST' })
 export const getBrowserStatus = () => req<{ status: string; request_count: number }>('/browser/status')
 export const getBrowserRequests = () => req<Array<Record<string, unknown>>>('/browser/requests')
+
+export const getSystemConfig = () => req<SystemConfig>('/config')
+export const updateSystemConfig = (body: SystemConfig) =>
+  req<{ ok: boolean }>('/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })

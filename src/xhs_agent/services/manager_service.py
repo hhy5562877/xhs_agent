@@ -3,7 +3,7 @@ import logging
 import asyncio
 import httpx
 from datetime import datetime, timedelta
-from ..config import settings
+from ..config import get_setting
 
 logger = logging.getLogger("xhs_agent")
 
@@ -62,11 +62,13 @@ async def fetch_account_stats(cookie: str, user_id: str = "") -> dict:
 
 def _get_stats(cookie: str) -> list:
     from ..services.upload_service import get_notes_statistics
+
     return get_notes_statistics(cookie, time=30)
 
 
 def _get_recent_notes(cookie: str, user_id: str = "") -> list:
     from ..services.upload_service import get_user_recent_notes
+
     return get_user_recent_notes(cookie, user_id=user_id)
 
 
@@ -79,23 +81,32 @@ def _summarize_stats(account_data: dict) -> str:
         total_likes = sum(int(n.get("liked_count") or 0) for n in notes)
         total_collect = sum(int(n.get("collected_count") or 0) for n in notes)
         total_comment = sum(int(n.get("comment_count") or 0) for n in notes)
-        lines.append(f"累计点赞：{total_likes}  收藏：{total_collect}  评论：{total_comment}")
-        sorted_notes = sorted(notes, key=lambda n: int(n.get("liked_count") or 0) + int(n.get("collected_count") or 0), reverse=True)
+        lines.append(
+            f"累计点赞：{total_likes}  收藏：{total_collect}  评论：{total_comment}"
+        )
+        sorted_notes = sorted(
+            notes,
+            key=lambda n: int(n.get("liked_count") or 0)
+            + int(n.get("collected_count") or 0),
+            reverse=True,
+        )
         lines.append("表现最好的笔记（按点赞+收藏）：")
         for n in sorted_notes[:5]:
             lines.append(
-                f"  - 《{n.get('title') or '无标题'}》[{n.get('type','')}]"
-                f" 点赞:{n.get('liked_count',0)} 收藏:{n.get('collected_count',0)}"
-                f" 评论:{n.get('comment_count',0)} 分享:{n.get('share_count',0)}"
+                f"  - 《{n.get('title') or '无标题'}》[{n.get('type', '')}]"
+                f" 点赞:{n.get('liked_count', 0)} 收藏:{n.get('collected_count', 0)}"
+                f" 评论:{n.get('comment_count', 0)} 分享:{n.get('share_count', 0)}"
             )
         lines.append("所有笔记列表：")
         for n in notes:
             lines.append(
                 f"  - 《{n.get('title') or '无标题'}》"
-                f" 点赞:{n.get('liked_count',0)} 收藏:{n.get('collected_count',0)} 评论:{n.get('comment_count',0)}"
+                f" 点赞:{n.get('liked_count', 0)} 收藏:{n.get('collected_count', 0)} 评论:{n.get('comment_count', 0)}"
             )
     else:
-        lines.append("注意：本次因小红书验证码拦截，无法获取历史笔记数据，请根据运营目标和平台规律制定计划。")
+        lines.append(
+            "注意：本次因小红书验证码拦截，无法获取历史笔记数据，请根据运营目标和平台规律制定计划。"
+        )
 
     stats = account_data.get("stats", [])
     if isinstance(stats, list) and stats:
@@ -120,16 +131,19 @@ async def plan_operation(
         f"详细描述：{goal_desc}\n"
         f"主要风格：{style}\n"
         f"每日发布频率：{post_freq} 篇\n"
-        f"当前时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}（星期{['一','二','三','四','五','六','日'][datetime.now().weekday()]}）\n\n"
+        f"当前时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}（星期{['一', '二', '三', '四', '五', '六', '日'][datetime.now().weekday()]}）\n\n"
         f"账号近期数据：\n{stats_summary}\n\n"
         "请结合以上数据，制定未来7天的内容发布计划。"
     )
 
+    base_url = await get_setting("siliconflow_base_url")
+    api_key = await get_setting("siliconflow_api_key")
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(
-            f"{settings.image_api_base_url}/chat/completions",
+            f"{base_url}/chat/completions",
             headers={
-                "Authorization": f"Bearer {settings.image_api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={
@@ -149,7 +163,8 @@ async def plan_operation(
     logger.info(f"[Manager AI 输出]\n{raw}")
     # 提取 JSON 块（模型可能在 ```json ... ``` 中返回）
     import re
-    match = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', raw)
+
+    match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", raw)
     json_str = match.group(1) if match else raw.strip()
     return json.loads(json_str)
 

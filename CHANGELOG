@@ -1,3 +1,4 @@
+- [2026-02-20 16:30] FEAT: 配置迁移至数据库，前端新增系统配置页面，移除 .env 依赖 (Files: src/xhs_agent/db.py, src/xhs_agent/config.py, src/xhs_agent/api/router.py, src/xhs_agent/services/text_service.py, src/xhs_agent/services/image_service.py, src/xhs_agent/services/notification_service.py, src/xhs_agent/services/manager_service.py, frontend/src/types.ts, frontend/src/api.ts, frontend/src/App.tsx, docker-compose.yml)
 - [2026-02-20 14:00] CHORE: 降级 Python 要求至 3.12，重新生成 uv.lock (Files: .python-version, pyproject.toml, uv.lock)
 - [2026-02-20 13:50] CHORE: Dockerfile 改为多阶段构建，集成前端构建，全面使用国内加速源 (Files: Dockerfile)
 - [2026-02-20 13:30] CHORE: 添加 Docker 支持，移除 playwright 生产依赖 (Files: Dockerfile, docker-compose.yml, .dockerignore, pyproject.toml)

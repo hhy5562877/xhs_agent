@@ -1,31 +1,16 @@
-from functools import lru_cache
-from pydantic_settings import BaseSettings
+from .db import get_config
+
+_DEFAULTS = {
+    "siliconflow_api_key": "请在系统配置中填写",
+    "siliconflow_base_url": "https://api.siliconflow.cn/v1",
+    "text_model": "Qwen/Qwen3-VL-32B-Instruct",
+    "image_api_key": "请在系统配置中填写",
+    "image_api_base_url": "请在系统配置中填写",
+    "image_model": "doubao-seedream-4-5-251128",
+    "wxpusher_app_token": "",
+    "wxpusher_uids": "",
+}
 
 
-class Settings(BaseSettings):
-    siliconflow_api_key: str
-    siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
-    text_model: str = "Qwen/Qwen3-VL-32B-Instruct"
-
-    image_api_key: str
-    image_api_base_url: str
-    image_model: str = "nano-banana"
-
-    wxpusher_app_token: str = ""
-    wxpusher_uids: str = ""
-
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
-
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
-
-
-# 懒加载代理：首次访问时才实例化
-class _SettingsProxy:
-    def __getattr__(self, name: str):
-        return getattr(get_settings(), name)
-
-
-settings = _SettingsProxy()
+async def get_setting(key: str) -> str:
+    return await get_config(key, _DEFAULTS.get(key, ""))

@@ -8,6 +8,3 @@ services:
     volumes:
       - ./data:/app/data
       - ./log:/app/log
-      - ./.env:/app/.env:ro
-    env_file:
-      - .env

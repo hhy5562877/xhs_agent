@@ -9,13 +9,13 @@ import {
   StarOutlined, RocketOutlined, UserOutlined, PlusOutlined,
   DeleteOutlined, CheckCircleFilled, LoadingOutlined, EditOutlined,
   PictureOutlined, FileTextOutlined, TeamOutlined,
-  BarChartOutlined, CalendarOutlined, ThunderboltOutlined,
+  BarChartOutlined, CalendarOutlined, ThunderboltOutlined, SettingOutlined,
 } from '@ant-design/icons'
-import type { GenerateResponse, Account, AccountPreview, Goal, ScheduledPost } from './types'
+import type { GenerateResponse, Account, AccountPreview, Goal, ScheduledPost, SystemConfig } from './types'
 import {
   generateContent, uploadNote, getAccounts, previewAccount, createAccount, deleteAccount,
   getGoals, createGoal, deleteGoal, updateGoal, planGoal, getGoalPosts, runPostNow, updateAccountCookie,
-  startBrowser, stopBrowser, getBrowserStatus,
+  startBrowser, stopBrowser, getBrowserStatus, getSystemConfig, updateSystemConfig,
 } from './api'
 
 const { Header, Content } = Layout
@@ -86,6 +86,10 @@ export default function App() {
   const [_postsGoalId, setPostsGoalId] = useState<number | null>(null)
   const [postsOpen, setPostsOpen] = useState(false)
   const [planAnalysis, setPlanAnalysis] = useState('')
+
+  const [configForm] = Form.useForm()
+  const [savingConfig, setSavingConfig] = useState(false)
+  const [configLoaded, setConfigLoaded] = useState(false)
 
   const [msgApi, contextHolder] = message.useMessage()
 
@@ -281,6 +285,22 @@ export default function App() {
     setPostsOpen(true)
   }
 
+  async function loadConfig() {
+    if (configLoaded) return
+    const cfg = await getSystemConfig()
+    configForm.setFieldsValue(cfg)
+    setConfigLoaded(true)
+  }
+
+  async function onSaveConfig(values: SystemConfig) {
+    setSavingConfig(true)
+    try {
+      await updateSystemConfig(values)
+      msgApi.success('配置已保存')
+    } catch (e: unknown) { msgApi.error((e as Error).message) }
+    finally { setSavingConfig(false) }
+  }
+
   const imgSrc = (img: { url?: string; b64_json?: string }) =>
     img.url || (img.b64_json ? `data:image/png;base64,${img.b64_json}` : '')
 
@@ -315,8 +335,10 @@ export default function App() {
             { key: 'generate', label: <Space><FileTextOutlined />内容生成</Space>, children: null },
             { key: 'operation', label: <Space><BarChartOutlined />运营管理</Space>, children: null },
             { key: 'accounts', label: <Space><TeamOutlined />账号管理</Space>, children: null },
+            { key: 'config', label: <Space><SettingOutlined />系统配置</Space>, children: null },
           ]}
           style={{ marginBottom: 24 }}
+          onChange={(key) => { setActiveTab(key); if (key === 'config') loadConfig() }}
         />
 
         {/* ── 内容生成 Tab ── */}
@@ -515,6 +537,75 @@ export default function App() {
                   <Text type="secondary" style={{ fontSize: 12 }}>已拦截 {browserReqCount} 条请求</Text>
                 </div>
               )}
+            </Card>
+          </div>
+        )}
+
+        {activeTab === 'config' && (
+          <div className="fade-in-up">
+            <Card style={{ borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,.06)', border: 'none' }}
+              styles={{ body: { padding: 28 } }}
+              title={<Space><SettingOutlined style={{ color: '#ff2442' }} /><span>系统配置</span></Space>}
+            >
+              <Alert type="warning" showIcon style={{ marginBottom: 24 }}
+                message="配置说明"
+                description="所有 API Key 等敏感配置均加密存储在本地数据库中，不会上传到任何服务器。首次部署后请在此页面完成配置。" />
+              <Form form={configForm} onFinish={onSaveConfig} layout="vertical">
+                <Divider orientation="left">文本生成（SiliconFlow）</Divider>
+                <Row gutter={16}>
+                  <Col span={24}>
+                    <Form.Item name="siliconflow_api_key" label="API Key">
+                      <Input.Password placeholder="sk-..." />
+                    </Form.Item>
+                  </Col>
+                  <Col span={16}>
+                    <Form.Item name="siliconflow_base_url" label="Base URL">
+                      <Input placeholder="https://api.siliconflow.cn/v1" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item name="text_model" label="模型">
+                      <Input placeholder="Qwen/Qwen3-VL-32B-Instruct" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Divider orientation="left">图片生成</Divider>
+                <Row gutter={16}>
+                  <Col span={24}>
+                    <Form.Item name="image_api_key" label="API Key">
+                      <Input.Password placeholder="API Key" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={16}>
+                    <Form.Item name="image_api_base_url" label="Base URL">
+                      <Input placeholder="https://..." />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item name="image_model" label="模型">
+                      <Input placeholder="doubao-seedream-4-5-251128" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Divider orientation="left">WxPusher 通知（可选）</Divider>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item name="wxpusher_app_token" label="App Token">
+                      <Input.Password placeholder="AT_..." />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item name="wxpusher_uids" label="UID 列表（逗号分隔）">
+                      <Input placeholder="UID_xxx,UID_yyy" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Button type="primary" htmlType="submit" block loading={savingConfig}
+                  icon={<SettingOutlined />}
+                  style={{ ...primaryBtnStyle, height: 44, fontSize: 15, fontWeight: 600 }}>
+                  保存配置
+                </Button>
+              </Form>
             </Card>
           </div>
         )}

@@ -86,3 +86,14 @@ export interface PlanResult {
   analysis: string
   posts: ScheduledPost[]
 }
+
+export interface SystemConfig {
+  siliconflow_api_key: string
+  siliconflow_base_url: string
+  text_model: string
+  image_api_key: string
+  image_api_base_url: string
+  image_model: string
+  wxpusher_app_token: string
+  wxpusher_uids: string
+}

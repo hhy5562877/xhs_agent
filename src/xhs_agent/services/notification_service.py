@@ -1,7 +1,7 @@
 import logging
 import httpx
 from typing import Optional
-from ..config import settings
+from ..config import get_setting
 
 logger = logging.getLogger("xhs_agent")
 
@@ -12,10 +12,13 @@ class NotificationService:
     BASE_URL = "https://wxpusher.zjiecode.com/api"
 
     def __init__(self):
-        self.app_token = settings.wxpusher_app_token
-        self.uids = [
-            uid.strip() for uid in settings.wxpusher_uids.split(",") if uid.strip()
-        ]
+        self.app_token = ""
+        self.uids = []
+
+    async def _load_config(self):
+        self.app_token = await get_setting("wxpusher_app_token")
+        uids_str = await get_setting("wxpusher_uids")
+        self.uids = [uid.strip() for uid in uids_str.split(",") if uid.strip()]
 
     def is_enabled(self) -> bool:
         """检查通知服务是否已配置"""
@@ -42,6 +45,8 @@ class NotificationService:
         Returns:
             bool: 发送是否成功
         """
+        await self._load_config()
+
         if not self.is_enabled():
             logger.warning("WxPusher 未配置，跳过通知发送")
             return False

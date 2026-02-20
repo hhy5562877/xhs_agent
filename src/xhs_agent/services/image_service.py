@@ -2,7 +2,7 @@ import asyncio
 import logging
 import httpx
 from typing import Literal
-from ..config import settings
+from ..config import get_setting
 from ..api.schemas import GeneratedImage
 
 logger = logging.getLogger("xhs_agent")
@@ -56,15 +56,19 @@ def _build_poster_prompt(prompt: str) -> str:
 
 async def _call_image_api(prompt: str, size: str) -> GeneratedImage:
     """调用即梦4 API 生成单张图片"""
+    base_url = await get_setting("image_api_base_url")
+    api_key = await get_setting("image_api_key")
+    model = await get_setting("image_model")
+
     async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(
-            f"{settings.image_api_base_url}/images/generations",
+            f"{base_url}/images/generations",
             headers={
-                "Authorization": f"Bearer {settings.image_api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": settings.image_model,
+                "model": model,
                 "prompt": prompt,
                 "n": 1,
                 "response_format": "url",
