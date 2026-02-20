@@ -86,7 +86,7 @@ def _make_client(cookie: str) -> XhsClient:
 
 async def download_image_to_tmp(url: str) -> str:
     """将图片 URL 下载到临时文件，返回本地路径"""
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.get(url)
         resp.raise_for_status()
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
