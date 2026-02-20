@@ -1,0 +1,17 @@
+.git
+.gitignore
+.venv
+.ruff_cache
+.claude
+.DS_Store
+__pycache__
+*.pyc
+*.pyo
+*.db
+.env
+log/
+data/
+frontend/node_modules/
+README.md
+CHANGELOG
+doc/

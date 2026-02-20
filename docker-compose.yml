@@ -1,0 +1,14 @@
+services:
+  xhs-agent:
+    build: .
+    image: xhs-agent:latest
+    container_name: xhs-agent
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./log:/app/log
+      - ./.env:/app/.env:ro
+    env_file:
+      - .env

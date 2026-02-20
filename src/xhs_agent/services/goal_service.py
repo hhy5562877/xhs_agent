@@ -188,7 +188,14 @@ async def execute_scheduled_post(post_id: int) -> None:
             post["topic"], post["style"], post["image_count"]
         )
         prompts = content.image_prompts[: post["image_count"]]
-        images = await generate_images(prompts, aspect_ratio=post["aspect_ratio"])
+        styles = (
+            content.image_styles[: post["image_count"]]
+            if content.image_styles
+            else None
+        )
+        images = await generate_images(
+            prompts, aspect_ratio=post["aspect_ratio"], styles=styles
+        )
         image_urls = [img.url or "" for img in images if img.url]
         images_json = json.dumps(
             [{"url": img.url, "b64_json": img.b64_json} for img in images]
