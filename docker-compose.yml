@@ -1,7 +1,6 @@
 services:
   xhs-agent:
-    build: .
-    image: xhs-agent:latest
+    image: crpi-6rxq3fzaickvh3iw.cn-hangzhou.personal.cr.aliyuncs.com/xxxh/xhs_agent:latest
     container_name: xhs-agent
     restart: unless-stopped
     ports:
