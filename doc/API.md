@@ -139,6 +139,77 @@
 
 ---
 
+## 账号参考图片
+
+### POST /api/accounts/{account_id}/images
+
+上传参考图片，异步调用 GLM-4.6V 视觉模型识别内容。识别 prompt 根据分类不同而不同。
+
+**请求格式**：`multipart/form-data`
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| file | File | ✅ | 图片文件（JPG/PNG/WebP），不超过 10MB |
+| category | string | ❌ | 图片分类，默认 `style`。可选值：`style`(风格参考)、`person`(人物形象)、`product`(产品素材)、`scene`(场景环境)、`brand`(品牌元素) |
+
+**响应示例**
+
+```json
+{
+  "id": 1,
+  "account_id": "acc_001",
+  "file_path": "https://mybucket-1250000000.cos.ap-guangzhou.myqcloud.com/ref_images/acc_001/style/abc123.jpg",
+  "original_name": "咖啡店.jpg",
+  "category": "style",
+  "annotation": "",
+  "status": "pending",
+  "created_at": "2026-02-21 22:00"
+}
+```
+
+---
+
+### GET /api/accounts/{account_id}/images
+
+获取账号的参考图片列表，支持按分类过滤。
+
+**查询参数**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| category | string | ❌ | 按分类过滤，可选值同上传接口。不传则返回全部 |
+
+**响应示例**
+
+```json
+[
+  {
+    "id": 1,
+    "account_id": "acc_001",
+    "file_path": "https://mybucket-1250000000.cos.ap-guangzhou.myqcloud.com/ref_images/acc_001/style/abc123.jpg",
+    "original_name": "咖啡店.jpg",
+    "category": "style",
+    "annotation": "图片展示了一家温馨的咖啡店内景...",
+    "status": "done",
+    "created_at": "2026-02-21 22:00"
+  }
+]
+```
+
+---
+
+### DELETE /api/accounts/images/{image_id}
+
+删除参考图片（同时删除文件和数据库记录）。
+
+---
+
+### POST /api/accounts/images/{image_id}/retry
+
+重新触发视觉模型识别（用于识别失败时重试）。
+
+---
+
 ## 运营目标
 
 ### GET /api/goals
@@ -186,6 +257,8 @@
 ### POST /api/goals/{goal_id}/plan
 
 触发总管 AI 分析账号历史数据，生成并保存 7 天发布计划。同一目标同时只允许一个规划请求（429 防重复）。
+
+AI 会根据账号的参考图片素材库（按分类：风格参考/人物形象/产品素材/场景环境/品牌元素），为每条排期选择合适的参考图片，存入 `ref_image_ids` 字段。执行时 PromptAgent 会将参考图片标注融入提示词。
 
 **响应示例**
 
@@ -238,11 +311,16 @@
   "siliconflow_api_key": "sk-****",
   "siliconflow_base_url": "https://api.siliconflow.cn/v1",
   "text_model": "Qwen/Qwen2.5-72B-Instruct",
+  "vision_model": "zai-org/GLM-4.6V",
   "image_api_key": "****",
   "image_api_base_url": "https://...",
   "image_model": "doubao-seedream-4-5-251128",
   "wxpusher_app_token": "",
-  "wxpusher_uid": ""
+  "wxpusher_uid": "",
+  "cos_secret_id": "AKID****",
+  "cos_secret_key": "****",
+  "cos_region": "ap-guangzhou",
+  "cos_bucket": "mybucket-1250000000"
 }
 ```
 

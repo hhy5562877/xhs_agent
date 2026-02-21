@@ -10,7 +10,7 @@ async def log_requests(request: Request, call_next):
     body = await request.body()
 
     logger.debug(
-        f"→ {request.method} {request.url.path}  body={body.decode()[:500] or '-'}"
+        f"→ {request.method} {request.url.path}  body={body.decode(errors='replace')[:500] or '-'}"
     )
 
     response = await call_next(request)

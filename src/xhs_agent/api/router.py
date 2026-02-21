@@ -1,8 +1,9 @@
 import asyncio
+import json
 import logging
 import os
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 from pydantic import BaseModel
 import httpx
@@ -11,6 +12,7 @@ from ..agent.xhs_agent import run
 from ..services.upload_service import download_image_to_tmp, upload_image_note
 from ..services import account_service
 from ..services import goal_service
+from ..services import account_image_service
 from ..services.manager_service import plan_operation, calc_scheduled_time
 from ..services.scheduler_service import schedule_post, scheduler
 
@@ -148,6 +150,61 @@ async def check_account_cookie(account_id: str):
         return {"valid": False, "reason": str(e)[:100]}
 
 
+# ── 账号参考图片（组） ──────────────────────────────────
+
+
+@router.post("/accounts/{account_id}/image-groups")
+async def upload_image_group(
+    account_id: str,
+    files: list[UploadFile] = File(...),
+    category: str = Form("style"),
+    user_prompt: str = Form(""),
+):
+    cookie = await account_service.get_cookie(account_id)
+    if not cookie:
+        raise HTTPException(status_code=404, detail="账号不存在")
+
+    if len(files) > 9:
+        raise HTTPException(status_code=400, detail="每组最多 9 张图片")
+
+    file_list: list[tuple[bytes, str]] = []
+    for f in files:
+        if not f.content_type or not f.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail=f"仅支持图片文件: {f.filename}")
+        data = await f.read()
+        if len(data) > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=400, detail=f"图片大小不能超过 10MB: {f.filename}"
+            )
+        file_list.append((data, f.filename or "image.jpg"))
+
+    record = await account_image_service.save_group(
+        account_id,
+        file_list,
+        category=category,
+        user_prompt=user_prompt,
+    )
+    return record
+
+
+@router.get("/accounts/{account_id}/image-groups")
+async def get_image_groups(account_id: str, category: str | None = None):
+    return await account_image_service.list_groups(account_id, category=category)
+
+
+@router.delete("/image-groups/{group_id}", status_code=204)
+async def delete_image_group(group_id: int):
+    if not await account_image_service.delete_group(group_id):
+        raise HTTPException(status_code=404, detail="图片组不存在")
+
+
+@router.post("/image-groups/{group_id}/retry")
+async def retry_group_vision(group_id: int):
+    if not await account_image_service.retry_group_vision(group_id):
+        raise HTTPException(status_code=404, detail="图片组不存在")
+    return {"ok": True}
+
+
 # ── 运营目标 ──────────────────────────────────────────
 class GoalCreate(BaseModel):
     title: str
@@ -255,6 +312,7 @@ async def plan_goal(goal_id: int):
                 goal["post_freq"],
                 cookie,
                 user_id=xhs_user_id,
+                account_id=account_id,
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"AI 规划失败: {e}")
@@ -275,6 +333,14 @@ async def plan_goal(goal_id: int):
             scheduled_at = calc_scheduled_time(
                 item["day_offset"], item["hour"], item["minute"]
             )
+            ref_images_raw = item.get("ref_images", [])
+            ref_image_ids = json.dumps(
+                [
+                    r["group_id"]
+                    for r in ref_images_raw
+                    if isinstance(r, dict) and "group_id" in r
+                ]
+            )
             post = await goal_service.create_scheduled_post(
                 goal_id=goal_id,
                 account_id=account_id,
@@ -283,6 +349,7 @@ async def plan_goal(goal_id: int):
                 aspect_ratio=item.get("aspect_ratio", "3:4"),
                 image_count=item.get("image_count", 1),
                 scheduled_at=scheduled_at,
+                ref_image_ids=ref_image_ids,
             )
             run_time = datetime.strptime(scheduled_at, "%Y-%m-%d %H:%M")
             schedule_post(post["id"], run_time)
@@ -388,22 +455,34 @@ _CONFIG_KEYS = [
     "siliconflow_api_key",
     "siliconflow_base_url",
     "text_model",
+    "vision_model",
     "image_api_key",
     "image_api_base_url",
     "image_model",
     "wxpusher_app_token",
     "wxpusher_uids",
+    "cos_secret_id",
+    "cos_secret_key",
+    "cos_region",
+    "cos_bucket",
+    "cos_path_prefix",
 ]
 
 _CONFIG_DEFAULTS = {
     "siliconflow_api_key": "",
     "siliconflow_base_url": "https://api.siliconflow.cn/v1",
     "text_model": "Qwen/Qwen3-VL-32B-Instruct",
+    "vision_model": "zai-org/GLM-4.6V",
     "image_api_key": "",
     "image_api_base_url": "",
     "image_model": "doubao-seedream-4-5-251128",
     "wxpusher_app_token": "",
     "wxpusher_uids": "",
+    "cos_secret_id": "",
+    "cos_secret_key": "",
+    "cos_region": "ap-guangzhou",
+    "cos_bucket": "",
+    "cos_path_prefix": "ref_images",
 }
 
 
@@ -419,11 +498,17 @@ class ConfigUpdate(BaseModel):
     siliconflow_api_key: str = ""
     siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
     text_model: str = "Qwen/Qwen3-VL-32B-Instruct"
+    vision_model: str = "zai-org/GLM-4.6V"
     image_api_key: str = ""
     image_api_base_url: str = ""
     image_model: str = "doubao-seedream-4-5-251128"
     wxpusher_app_token: str = ""
     wxpusher_uids: str = ""
+    cos_secret_id: str = ""
+    cos_secret_key: str = ""
+    cos_region: str = "ap-guangzhou"
+    cos_bucket: str = ""
+    cos_path_prefix: str = "ref_images"
 
 
 @router.put("/config")

@@ -130,13 +130,14 @@ async def create_scheduled_post(
     aspect_ratio: str,
     image_count: int,
     scheduled_at: str,
+    ref_image_ids: str = "[]",
 ) -> dict:
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     async with get_db() as db:
         cur = await db.execute(
             """INSERT INTO scheduled_posts
-               (goal_id, account_id, topic, style, aspect_ratio, image_count, scheduled_at, status, created_at)
-               VALUES (?,?,?,?,?,?,?,'pending',?)""",
+               (goal_id, account_id, topic, style, aspect_ratio, image_count, scheduled_at, ref_image_ids, status, created_at)
+               VALUES (?,?,?,?,?,?,?,?,'pending',?)""",
             (
                 goal_id,
                 account_id,
@@ -145,6 +146,7 @@ async def create_scheduled_post(
                 aspect_ratio,
                 image_count,
                 scheduled_at,
+                ref_image_ids,
                 created_at,
             ),
         )
@@ -201,9 +203,41 @@ async def execute_scheduled_post(post_id: int) -> None:
 
     tmp_paths: list[str] = []
     try:
-        # 1. 生成文本内容
+        # 1. 加载参考图片组
+        ref_images: list[dict] = []
+        ref_image_urls: list[str] = []
+        raw_ref_ids = post["ref_image_ids"] if "ref_image_ids" in post.keys() else "[]"
+        try:
+            ref_ids = json.loads(raw_ref_ids) if raw_ref_ids else []
+        except (json.JSONDecodeError, TypeError):
+            ref_ids = []
+        if ref_ids:
+            from ..services.account_image_service import get_groups_by_ids
+
+            ref_groups = await get_groups_by_ids(ref_ids)
+            for g in ref_groups:
+                ref_images.append(
+                    {
+                        "category": g.get("category", "style"),
+                        "original_name": f"图片组({len(g.get('images', []))}张)",
+                        "annotation": g.get("annotation", ""),
+                    }
+                )
+                for img in g.get("images", []):
+                    url = img.get("file_path", "")
+                    if url:
+                        ref_image_urls.append(url)
+            logger.info(
+                f"定时任务 #{post_id} 加载 {len(ref_groups)} 组参考图片, {len(ref_image_urls)} 张参考图URL"
+            )
+
+        # 2. 生成文本内容（传入参考图标注影响风格判断）
+        ref_annotations = ref_images if ref_images else None
         content = await generate_xhs_content(
-            post["topic"], post["style"], post["image_count"]
+            post["topic"],
+            post["style"],
+            post["image_count"],
+            ref_annotations=ref_annotations,
         )
         logger.info(
             f"定时任务 #{post_id} 文本生成完成: title={content.title!r}, image_styles={content.image_styles}"
@@ -212,19 +246,22 @@ async def execute_scheduled_post(post_id: int) -> None:
             f"定时任务 #{post_id} 文本详情: body长度={len(content.body)}字, hashtags={content.hashtags}, image_prompts={content.image_prompts}"
         )
 
-        # 2. PromptAgent 选模板 + 填充细节
         prompts, styles = await build_image_prompts(
             topic=post["topic"],
             style=post["style"],
             content=content,
             image_count=post["image_count"],
+            ref_images=ref_images if ref_images else None,
         )
         logger.info(f"定时任务 #{post_id} 提示词生成完成: styles={styles}")
         logger.debug(f"定时任务 #{post_id} 完整提示词: {prompts}")
 
         # 3. 生成图片
         images = await generate_images(
-            prompts, aspect_ratio=post["aspect_ratio"], styles=styles
+            prompts,
+            aspect_ratio=post["aspect_ratio"],
+            styles=styles,
+            ref_image_urls=ref_image_urls if ref_image_urls else None,
         )
         failed = [
             i + 1 for i, img in enumerate(images) if not img.url and not img.b64_json

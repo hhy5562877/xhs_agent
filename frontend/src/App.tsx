@@ -1,21 +1,24 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import {
   Layout, Typography, Button, Select, Form, Input, Card, Tag, Image,
   Modal, Tabs, List, Avatar, Space, Divider, Checkbox,
   message, Spin, Empty, Popconfirm, Row, Col, Alert, Badge, Table,
-  InputNumber,
+  InputNumber, Upload, Tooltip,
 } from 'antd'
 import {
   StarOutlined, RocketOutlined, UserOutlined, PlusOutlined,
   DeleteOutlined, CheckCircleFilled, LoadingOutlined, EditOutlined,
   PictureOutlined, FileTextOutlined, TeamOutlined,
   BarChartOutlined, CalendarOutlined, ThunderboltOutlined, SettingOutlined,
+  ReloadOutlined, EyeOutlined,
 } from '@ant-design/icons'
-import type { GenerateResponse, Account, AccountPreview, Goal, ScheduledPost, SystemConfig } from './types'
+import type { GenerateResponse, Account, AccountPreview, Goal, ScheduledPost, SystemConfig, ImageGroup, ImageCategory } from './types'
+import { IMAGE_CATEGORY_MAP, IMAGE_CATEGORIES } from './types'
 import {
   generateContent, uploadNote, getAccounts, previewAccount, createAccount, deleteAccount,
   getGoals, createGoal, deleteGoal, updateGoal, planGoal, getGoalPosts, runPostNow, updateAccountCookie,
   checkAccountCookie, getSystemConfig, updateSystemConfig,
+  getImageGroups, uploadImageGroup, deleteImageGroup, retryGroupVision,
 } from './api'
 
 const { Header, Content } = Layout
@@ -103,6 +106,14 @@ export default function App() {
   const [runningPostIds, setRunningPostIds] = useState<Set<number>>(new Set())
   const [checkingIds, setCheckingIds] = useState<Set<string>>(new Set())
   const [cookieStatus, setCookieStatus] = useState<Record<string, 'valid' | 'invalid'>>({})
+
+  const [imageGroups, setImageGroups] = useState<ImageGroup[]>([])
+  const [imageAccount, setImageAccount] = useState<Account | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [uploadCategory, setUploadCategory] = useState<ImageCategory>('style')
+  const [imageTabKey, setImageTabKey] = useState<string>('all')
+  const [uploadPrompt, setUploadPrompt] = useState('')
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
 
   // operation goals
   const [goals, setGoals] = useState<Goal[]>([])
@@ -235,6 +246,38 @@ export default function App() {
       if (goalId) setPosts(await getGoalPosts(goalId))
     } catch (e: unknown) { msgApi.error((e as Error).message) }
     finally { setRunningPostIds(prev => { const s = new Set(prev); s.delete(postId); return s }) }
+  }
+
+  const loadAccountImages = useCallback(async (acc: Account) => {
+    setImageAccount(acc)
+    setImageGroups(await getImageGroups(acc.id))
+  }, [])
+
+  async function onConfirmUpload() {
+    if (!imageAccount || pendingFiles.length === 0) return
+    setUploadingImage(true)
+    try {
+      await uploadImageGroup(imageAccount.id, pendingFiles, uploadCategory, uploadPrompt)
+      setImageGroups(await getImageGroups(imageAccount.id))
+      setPendingFiles([])
+      setUploadPrompt('')
+      msgApi.success(`${pendingFiles.length} 张图片已上传为一组，正在识别中...`)
+    } catch (e: unknown) { msgApi.error((e as Error).message) }
+    finally { setUploadingImage(false) }
+  }
+
+  async function onDeleteGroup(groupId: number) {
+    await deleteImageGroup(groupId)
+    if (imageAccount) setImageGroups(await getImageGroups(imageAccount.id))
+    msgApi.success('已删除')
+  }
+
+  async function onRetryGroup(groupId: number) {
+    try {
+      await retryGroupVision(groupId)
+      if (imageAccount) setImageGroups(await getImageGroups(imageAccount.id))
+      msgApi.success('已重新触发识别')
+    } catch (e: unknown) { msgApi.error((e as Error).message) }
   }
 
   // ── 运营目标 ──────────────────────────────────────────
@@ -504,6 +547,7 @@ export default function App() {
                 : <List dataSource={accounts} renderItem={acc => (
                     <List.Item style={{ borderRadius: 10, padding: '10px 14px', marginBottom: 8, border: '1px solid #f0f0f0', background: '#fafafa' }}
                       actions={[
+                        <Button key="images" size="small" icon={<PictureOutlined />} onClick={() => loadAccountImages(acc)}>参考图片</Button>,
                         <Button key="check" size="small" loading={checkingIds.has(acc.id)}
                           icon={cookieStatus[acc.id] === 'valid' ? <CheckCircleFilled style={{ color: '#52c41a' }} /> : cookieStatus[acc.id] === 'invalid' ? <CheckCircleFilled style={{ color: '#ff4d4f' }} /> : <CheckCircleFilled />}
                           onClick={() => onCheckCookie(acc.id)}>
@@ -563,14 +607,19 @@ export default function App() {
                       <Input.Password placeholder="sk-..." />
                     </Form.Item>
                   </Col>
-                  <Col span={16}>
+                  <Col span={12}>
                     <Form.Item name="siliconflow_base_url" label="Base URL">
                       <Input placeholder="https://api.siliconflow.cn/v1" />
                     </Form.Item>
                   </Col>
-                  <Col span={8}>
-                    <Form.Item name="text_model" label="模型">
+                  <Col span={6}>
+                    <Form.Item name="text_model" label="文本模型">
                       <Input placeholder="Qwen/Qwen3-VL-32B-Instruct" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={6}>
+                    <Form.Item name="vision_model" label="视觉模型">
+                      <Input placeholder="zai-org/GLM-4.6V" />
                     </Form.Item>
                   </Col>
                 </Row>
@@ -589,6 +638,34 @@ export default function App() {
                   <Col span={8}>
                     <Form.Item name="image_model" label="模型">
                       <Input placeholder="doubao-seedream-4-5-251128" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Divider>腾讯云 COS 对象存储</Divider>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item name="cos_secret_id" label="SecretId">
+                      <Input.Password placeholder="AKIDxxxxxxxx" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item name="cos_secret_key" label="SecretKey">
+                      <Input.Password placeholder="xxxxxxxx" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item name="cos_region" label="地域（Region）">
+                      <Input placeholder="ap-guangzhou" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item name="cos_bucket" label="存储桶（Bucket）">
+                      <Input placeholder="mybucket-1250000000" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={24}>
+                    <Form.Item name="cos_path_prefix" label="存储路径前缀">
+                      <Input placeholder="ref_images" />
                     </Form.Item>
                   </Col>
                 </Row>
@@ -825,6 +902,170 @@ export default function App() {
           </Row>
           <Button type="primary" htmlType="submit" block loading={savingGoal} style={primaryBtnStyle}>保存修改</Button>
         </Form>
+      </Modal>
+
+      {/* 参考图片管理 Modal */}
+      <Modal title={<Space><PictureOutlined style={{ color: '#ff2442' }} /><span>参考图片 - {imageAccount?.nickname || imageAccount?.name}</span></Space>}
+        open={!!imageAccount} onCancel={() => { setImageAccount(null); setImageTabKey('all'); setPendingFiles([]) }} footer={null} width={720}>
+        <Space direction="vertical" style={{ width: '100%' }} size={16}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <Upload.Dragger
+                accept="image/*"
+                showUploadList={false}
+                multiple
+                beforeUpload={(file) => {
+                  setPendingFiles(prev =>
+                    prev.some(p => p.name === file.name && p.size === file.size)
+                      ? prev
+                      : prev.length >= 9 ? prev : [...prev, file]
+                  )
+                  return false
+                }}
+                disabled={uploadingImage}
+              >
+                <p style={{ fontSize: 32, color: '#ff2442', marginBottom: 8 }}>
+                  {uploadingImage ? <LoadingOutlined /> : <PlusOutlined />}
+                </p>
+                <p style={{ fontSize: 14, color: '#666' }}>点击或拖拽选择图片（可多选）</p>
+                <p style={{ fontSize: 12, color: '#999' }}>支持 JPG/PNG/WebP，单张不超过 10MB</p>
+              </Upload.Dragger>
+            </div>
+            <div style={{ width: 160, paddingTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12, marginBottom: 4, display: 'block' }}>上传分类</Text>
+              <Select
+                value={uploadCategory}
+                onChange={setUploadCategory}
+                style={{ width: '100%' }}
+                options={IMAGE_CATEGORIES.map(k => ({ label: IMAGE_CATEGORY_MAP[k].name, value: k }))}
+              />
+              <Text type="secondary" style={{ fontSize: 11, marginTop: 4, display: 'block' }}>
+                {IMAGE_CATEGORY_MAP[uploadCategory].desc}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12, marginTop: 10, marginBottom: 4, display: 'block' }}>识别提示（可选）</Text>
+              <Input.TextArea
+                rows={2}
+                value={uploadPrompt}
+                onChange={e => setUploadPrompt(e.target.value)}
+                placeholder="补充说明，如：这是XX品牌的产品"
+                style={{ fontSize: 12 }}
+              />
+            </div>
+          </div>
+
+          {pendingFiles.length > 0 && (
+            <Card size="small" style={{ borderRadius: 10, background: '#fafafa' }}
+              title={<Text style={{ fontSize: 13 }}>待上传 ({pendingFiles.length} 张)</Text>}
+              extra={
+                <Space size={8}>
+                  <Button size="small" onClick={() => setPendingFiles([])} disabled={uploadingImage}>清空</Button>
+                  <Button size="small" type="primary" icon={<RocketOutlined />}
+                    loading={uploadingImage} onClick={onConfirmUpload}
+                    style={{ background: '#ff2442', borderColor: '#ff2442' }}>
+                    确认上传
+                  </Button>
+                </Space>
+              }
+            >
+              <Row gutter={[8, 8]}>
+                {pendingFiles.map((file, idx) => (
+                  <Col key={`${file.name}-${idx}`} xs={8} sm={6} md={4}>
+                    <div style={{ position: 'relative' }}>
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt={file.name}
+                        style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 6, display: 'block' }}
+                      />
+                      <Button
+                        size="small" type="text" danger
+                        icon={<DeleteOutlined />}
+                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(255,255,255,.85)', borderRadius: '50%', width: 22, height: 22, padding: 0, minWidth: 22 }}
+                        onClick={() => setPendingFiles(prev => prev.filter((_, i) => i !== idx))}
+                      />
+                      <Text ellipsis style={{ fontSize: 10, display: 'block', textAlign: 'center', marginTop: 2 }}>{file.name}</Text>
+                    </div>
+                  </Col>
+                ))}
+              </Row>
+            </Card>
+          )}
+
+          <Tabs activeKey={imageTabKey} onChange={setImageTabKey} size="small" items={[
+            { key: 'all', label: `全部 (${imageGroups.length})` },
+            ...IMAGE_CATEGORIES.map(k => ({
+              key: k,
+              label: `${IMAGE_CATEGORY_MAP[k].name} (${imageGroups.filter(g => (g.category || 'style') === k).length})`,
+            })),
+          ]} />
+
+          {(() => {
+            const filtered = imageTabKey === 'all'
+              ? imageGroups
+              : imageGroups.filter(g => (g.category || 'style') === imageTabKey)
+            return filtered.length === 0
+              ? <Empty description="暂无参考图片" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              : <Space direction="vertical" style={{ width: '100%' }} size={12}>
+                  {filtered.map(group => (
+                    <Card key={group.id} size="small" style={{ borderRadius: 10 }}
+                      title={
+                        <Space size={6}>
+                          <Tag color="pink" style={{ fontSize: 11, margin: 0 }}>
+                            {IMAGE_CATEGORY_MAP[(group.category || 'style') as ImageCategory]?.name || '风格参考'}
+                          </Tag>
+                          <Text style={{ fontSize: 12 }}>{group.images?.length || 0} 张</Text>
+                          {group.status === 'done'
+                            ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 12 }} />
+                            : group.status === 'pending'
+                              ? <LoadingOutlined spin style={{ fontSize: 12 }} />
+                              : <Tooltip title="识别失败"><CheckCircleFilled style={{ color: '#ff4d4f', fontSize: 12 }} /></Tooltip>
+                          }
+                          <Text type="secondary" style={{ fontSize: 11 }}>{group.created_at}</Text>
+                        </Space>
+                      }
+                      extra={
+                        <Space size={4}>
+                          {group.status === 'failed' && (
+                            <Tooltip title="重新识别">
+                              <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => onRetryGroup(group.id)} />
+                            </Tooltip>
+                          )}
+                          <Popconfirm title="确认删除整组？" onConfirm={() => onDeleteGroup(group.id)} okText="删除" okButtonProps={{ danger: true }}>
+                            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                          </Popconfirm>
+                        </Space>
+                      }
+                    >
+                      {group.user_prompt && (
+                        <div style={{ marginBottom: 8 }}>
+                          <Text type="secondary" style={{ fontSize: 11 }}>识别提示：{group.user_prompt}</Text>
+                        </div>
+                      )}
+                      <Image.PreviewGroup>
+                        <Row gutter={[8, 8]}>
+                          {(group.images || []).map(img => (
+                            <Col key={img.id} xs={8} sm={6} md={4}>
+                              <Image
+                                src={img.file_path}
+                                alt={img.original_name}
+                                style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 6 }}
+                                preview={{ mask: <EyeOutlined /> }}
+                              />
+                            </Col>
+                          ))}
+                        </Row>
+                      </Image.PreviewGroup>
+                      {group.status === 'done' && group.annotation && (
+                        <Tooltip title={group.annotation}>
+                          <Text type="secondary" ellipsis style={{ fontSize: 11, marginTop: 8, display: 'block' }}>
+                            {group.annotation.slice(0, 120)}...
+                          </Text>
+                        </Tooltip>
+                      )}
+                    </Card>
+                  ))}
+                </Space>
+          })()}
+        </Space>
       </Modal>
     </Layout>
   )

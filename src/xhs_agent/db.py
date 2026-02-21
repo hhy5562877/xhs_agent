@@ -65,7 +65,63 @@ async def init_db() -> None:
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS image_groups (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id    TEXT NOT NULL,
+            category      TEXT NOT NULL DEFAULT 'style',
+            user_prompt   TEXT NOT NULL DEFAULT '',
+            annotation    TEXT NOT NULL DEFAULT '',
+            status        TEXT NOT NULL DEFAULT 'pending',
+            created_at    TEXT NOT NULL,
+            FOREIGN KEY (account_id) REFERENCES accounts(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS account_images (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id      INTEGER NOT NULL DEFAULT 0,
+            account_id    TEXT NOT NULL,
+            file_path     TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            category      TEXT NOT NULL DEFAULT 'style',
+            user_prompt   TEXT NOT NULL DEFAULT '',
+            annotation    TEXT NOT NULL DEFAULT '',
+            status        TEXT NOT NULL DEFAULT 'pending',
+            created_at    TEXT NOT NULL,
+            FOREIGN KEY (account_id) REFERENCES accounts(id),
+            FOREIGN KEY (group_id) REFERENCES image_groups(id)
+        );
         """)
+
+        # ── 增量迁移：为旧表补充新字段 ──
+        try:
+            await db.execute(
+                "ALTER TABLE account_images ADD COLUMN category TEXT NOT NULL DEFAULT 'style'"
+            )
+        except Exception:
+            pass  # 字段已存在
+
+        try:
+            await db.execute(
+                "ALTER TABLE scheduled_posts ADD COLUMN ref_image_ids TEXT NOT NULL DEFAULT '[]'"
+            )
+        except Exception:
+            pass  # 字段已存在
+
+        try:
+            await db.execute(
+                "ALTER TABLE account_images ADD COLUMN user_prompt TEXT NOT NULL DEFAULT ''"
+            )
+        except Exception:
+            pass  # 字段已存在
+
+        try:
+            await db.execute(
+                "ALTER TABLE account_images ADD COLUMN group_id INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass  # 字段已存在
+
         await db.commit()
 
 

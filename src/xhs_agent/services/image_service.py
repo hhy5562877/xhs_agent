@@ -31,13 +31,7 @@ _PHOTO_STYLE_PREFIX = (
 )
 
 # 海报风格前缀：高端商业海报，基于 Seedream 最佳实践
-_POSTER_STYLE_PREFIX = (
-    "高端商业海报设计风格，"
-    "构图精准居中，视觉层次分明，主体突出，"
-    "色彩饱和度高、对比强烈，配色和谐统一，"
-    "光影质感细腻，背景简洁干净，"
-    "整体风格现代简约，适合小红书平台传播，"
-)
+_POSTER_STYLE_PREFIX = "海报设计风格，无水印，"
 
 
 def _build_photo_prompt(prompt: str) -> str:
@@ -54,19 +48,24 @@ def _build_poster_prompt(prompt: str) -> str:
     return _POSTER_STYLE_PREFIX + prompt
 
 
-async def _call_image_api(prompt: str, size: str, aspect_ratio: str) -> GeneratedImage:
+async def _call_image_api(
+    prompt: str,
+    size: str,
+    aspect_ratio: str,
+    ref_image_urls: list[str] | None = None,
+) -> GeneratedImage:
     base_url = await get_setting("image_api_base_url")
     api_key = await get_setting("image_api_key")
     model = await get_setting("image_model")
 
     logger.debug(
-        f"[ImageAPI] 请求参数: model={model!r}, size={size!r}, aspect_ratio={aspect_ratio!r}, prompt长度={len(prompt)}字"
+        f"[ImageAPI] 请求参数: model={model!r}, size={size!r}, aspect_ratio={aspect_ratio!r}, prompt长度={len(prompt)}字, 参考图={len(ref_image_urls or [])}张"
     )
     logger.debug(f"[ImageAPI] 完整提示词: {prompt}")
 
     is_nano_banana = model.startswith("nano-banana")
     if is_nano_banana:
-        payload = {
+        payload: dict = {
             "model": model,
             "prompt": prompt,
             "response_format": "url",
@@ -81,6 +80,11 @@ async def _call_image_api(prompt: str, size: str, aspect_ratio: str) -> Generate
             "size": size,
             "watermark": False,
         }
+
+    # 两种模型都支持 image 参数传入参考图数组
+    if ref_image_urls:
+        payload["image"] = ref_image_urls
+        logger.debug(f"[ImageAPI] 传入参考图: {[u[:60] for u in ref_image_urls]}")
 
     async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(
@@ -115,6 +119,7 @@ async def generate_images(
     prompts: list[str],
     aspect_ratio: str = "3:4",
     styles: list[ImageStyle] | None = None,
+    ref_image_urls: list[str] | None = None,
 ) -> list[GeneratedImage]:
     """并发生成多张图片，每张独立调用 API，支持按风格路由提示词"""
     if not prompts:
@@ -136,7 +141,9 @@ async def generate_images(
         for p, s in zip(prompts, styles)
     ]
 
-    tasks = [_call_image_api(p, size, aspect_ratio) for p in built_prompts]
+    tasks = [
+        _call_image_api(p, size, aspect_ratio, ref_image_urls) for p in built_prompts
+    ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     images: list[GeneratedImage] = []
@@ -151,8 +158,11 @@ async def generate_images(
 
 
 async def generate_image(
-    prompt: str, aspect_ratio: str = "3:4", style: ImageStyle = "photo"
+    prompt: str,
+    aspect_ratio: str = "3:4",
+    style: ImageStyle = "photo",
+    ref_image_urls: list[str] | None = None,
 ) -> GeneratedImage:
     """单张图片生成（兼容旧调用）"""
-    images = await generate_images([prompt], aspect_ratio, [style])
+    images = await generate_images([prompt], aspect_ratio, [style], ref_image_urls)
     return images[0] if images else GeneratedImage()

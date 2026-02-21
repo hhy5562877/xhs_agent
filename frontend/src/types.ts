@@ -91,9 +91,51 @@ export interface SystemConfig {
   siliconflow_api_key: string
   siliconflow_base_url: string
   text_model: string
+  vision_model: string
   image_api_key: string
   image_api_base_url: string
   image_model: string
   wxpusher_app_token: string
   wxpusher_uids: string
+  cos_secret_id: string
+  cos_secret_key: string
+  cos_region: string
+  cos_bucket: string
+  cos_path_prefix: string
 }
+
+export interface AccountImage {
+  id: number
+  group_id: number
+  account_id: string
+  file_path: string
+  original_name: string
+  category: ImageCategory
+  user_prompt: string
+  annotation: string
+  status: 'pending' | 'done' | 'failed'
+  created_at: string
+}
+
+export interface ImageGroup {
+  id: number
+  account_id: string
+  category: ImageCategory
+  user_prompt: string
+  annotation: string
+  status: 'pending' | 'done' | 'failed'
+  created_at: string
+  images: AccountImage[]
+}
+
+export type ImageCategory = 'style' | 'person' | 'product' | 'scene' | 'brand'
+
+export const IMAGE_CATEGORY_MAP: Record<ImageCategory, { name: string; desc: string }> = {
+  style:   { name: '风格参考', desc: '整体视觉调性参考' },
+  person:  { name: '人物形象', desc: '真人/IP/宠物' },
+  product: { name: '产品素材', desc: '要推广的产品/物品' },
+  scene:   { name: '场景环境', desc: '拍摄场景/背景' },
+  brand:   { name: '品牌元素', desc: 'Logo、色卡、视觉规范' },
+}
+
+export const IMAGE_CATEGORIES: ImageCategory[] = ['style', 'person', 'product', 'scene', 'brand']

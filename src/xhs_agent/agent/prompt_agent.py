@@ -78,49 +78,33 @@ PROMPT_TEMPLATES: dict[str, dict] = {
     "poster_product": {
         "style": "poster",
         "name": "产品种草",
-        "description": "适合产品推荐、好物分享、美妆护肤、数码配件，强调产品视觉冲击力",
+        "description": "适合产品推荐、好物分享、美妆护肤、数码配件",
         "template": (
-            "高端商业产品海报设计风格，{scene_detail}，"
-            "产品主体居中突出，背景采用渐变色调或纯色简洁背景，"
-            "色彩饱和度高、对比强烈，产品细节清晰锐利，"
-            "专业摄影棚光效，柔和高光和阴影，"
-            "整体构图精准，视觉层次分明，现代简约风格，无任何文字"
+            "海报设计风格，{scene_detail}，产品主体突出，无水印，可包含中文标题文字"
         ),
     },
     "poster_knowledge": {
         "style": "poster",
         "name": "知识干货",
-        "description": "适合知识分享、技能教程、干货总结、信息图表，强调信息传达的视觉感",
+        "description": "适合知识分享、技能教程、干货总结、信息图表",
         "template": (
-            "高端知识类信息海报设计风格，{scene_detail}，"
-            "构图采用网格或模块化布局，视觉层次清晰，"
-            "配色以蓝色、绿色或橙色为主调，专业感强，"
-            "图标或插图元素点缀，背景简洁干净，"
-            "整体风格现代专业，适合小红书平台传播，无任何文字"
+            "海报设计风格，{scene_detail}，信息图表排版，无水印，可包含中文标题文字"
         ),
     },
     "poster_motivation": {
         "style": "poster",
         "name": "励志激励",
-        "description": "适合励志内容、正能量分享、目标打卡、成长记录，强调视觉冲击和情绪感染力",
+        "description": "适合励志内容、正能量分享、目标打卡、成长记录",
         "template": (
-            "高端励志海报设计风格，{scene_detail}，"
-            "大面积强对比色块，视觉冲击力强，"
-            "暖色调为主（橙色、金色、红色），充满活力和能量感，"
-            "构图大胆，主体突出，背景有光晕或渐变效果，"
-            "整体风格热烈有力，适合小红书平台传播，无任何文字"
+            "海报设计风格，{scene_detail}，视觉冲击力强，无水印，可包含中文标题文字"
         ),
     },
     "poster_event": {
         "style": "poster",
         "name": "活动推广",
-        "description": "适合节日活动、品牌推广、限时优惠、打卡挑战，强调节日感和活动氛围",
+        "description": "适合节日活动、品牌推广、限时优惠、打卡挑战",
         "template": (
-            "高端活动推广海报设计风格，{scene_detail}，"
-            "节日感或活动氛围浓厚，色彩热烈饱满，"
-            "主体居中，装饰元素丰富（彩带、光效、几何图形），"
-            "背景有渐变或纹理质感，整体构图饱满有张力，"
-            "现代设计感强，适合小红书平台传播，无任何文字"
+            "海报设计风格，{scene_detail}，氛围感强，无水印，可包含中文标题文字"
         ),
     },
 }
@@ -163,6 +147,7 @@ async def build_image_prompts(
     style: str,
     content: XHSContent,
     image_count: int,
+    ref_images: list[dict] | None = None,
 ) -> tuple[list[str], list[str]]:
     # 取整篇笔记的统一风格（image_styles 列表中只有一个值）
     unified_style = content.image_styles[0] if content.image_styles else "photo"
@@ -191,9 +176,19 @@ async def build_image_prompts(
         f"笔记正文摘要：{content.body[:100]}...\n"
         f"话题标签：{', '.join(content.hashtags[:5])}\n"
         f"需要生成图片数量：{image_count}\n"
-        f"整篇笔记统一视觉风格：{unified_style}\n\n"
-        f"请为每张图片从上述同类模板中选择不同的子模板并填充场景细节，确保所有图片风格统一。"
+        f"整篇笔记统一视觉风格：{unified_style}\n"
     )
+
+    if ref_images:
+        ref_lines = ["\n参考图片素材（请将这些参考图的视觉特征融入生成的提示词中）："]
+        for img in ref_images:
+            cat_label = img.get("category", "style")
+            ref_lines.append(
+                f"  - [{cat_label}] 《{img.get('original_name', '')}》: {img.get('annotation', '')}"
+            )
+        user_prompt += "\n".join(ref_lines) + "\n"
+
+    user_prompt += "\n请为每张图片从上述同类模板中选择不同的子模板并填充场景细节，确保所有图片风格统一。"
 
     logger.debug(
         f"[PromptAgent] 开始选模板，主题={topic!r}，图片数={image_count}，统一风格={unified_style!r}"

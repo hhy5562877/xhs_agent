@@ -1,6 +1,6 @@
 import type {
   GenerateRequest, GenerateResponse, Account, AccountPreview, UploadRequest, UploadResponse,
-  Goal, ScheduledPost, PlanResult, SystemConfig,
+  Goal, ScheduledPost, PlanResult, SystemConfig, ImageGroup, ImageCategory,
 } from './types'
 
 const BASE = '/api'
@@ -48,3 +48,23 @@ export const checkAccountCookie = (id: string) =>
 export const getSystemConfig = () => req<SystemConfig>('/config')
 export const updateSystemConfig = (body: SystemConfig) =>
   req<{ ok: boolean }>('/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+export const getImageGroups = (accountId: string, category?: string) =>
+  req<ImageGroup[]>(`/accounts/${accountId}/image-groups${category ? `?category=${category}` : ''}`)
+
+export async function uploadImageGroup(accountId: string, files: File[], category: ImageCategory = 'style', userPrompt: string = ''): Promise<ImageGroup> {
+  const formData = new FormData()
+  for (const file of files) formData.append('files', file)
+  formData.append('category', category)
+  if (userPrompt.trim()) formData.append('user_prompt', userPrompt.trim())
+  const res = await fetch(`${BASE}/accounts/${accountId}/image-groups`, { method: 'POST', body: formData })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as { detail?: string }).detail || `上传失败 ${res.status}`)
+  return data as ImageGroup
+}
+
+export const deleteImageGroup = (groupId: number) =>
+  fetch(`${BASE}/image-groups/${groupId}`, { method: 'DELETE' })
+
+export const retryGroupVision = (groupId: number) =>
+  req<{ ok: boolean }>(`/image-groups/${groupId}/retry`, { method: 'POST' })
