@@ -11,6 +11,29 @@ from ..services.upload_service import download_image_to_tmp, upload_image_note
 logger = logging.getLogger("xhs_agent")
 
 
+def _get_fail_stage(e: Exception) -> str:
+    err = str(e).lower()
+    tb = getattr(e, "__traceback__", None)
+    frames = []
+    while tb:
+        frames.append(tb.tb_frame.f_code.co_filename + ":" + tb.tb_frame.f_code.co_name)
+        tb = tb.tb_next
+    frames_str = " ".join(frames)
+    if "text_service" in frames_str or "generate_xhs_content" in frames_str:
+        return "文本生成"
+    if "prompt_agent" in frames_str or "build_image_prompts" in frames_str:
+        return "提示词生成"
+    if "image_service" in frames_str or "generate_image" in frames_str:
+        return "图片生成"
+    if "download_image" in frames_str or "ReadTimeout" in type(e).__name__:
+        return "图片下载"
+    if "upload_image_note" in frames_str or "upload_service" in frames_str:
+        return "笔记上传"
+    if "cookie" in err:
+        return "账号Cookie"
+    return "未知阶段"
+
+
 async def list_goals(account_id: str | None = None) -> list[dict]:
     async with get_db() as db:
         if account_id:
@@ -330,7 +353,7 @@ async def execute_scheduled_post(post_id: int) -> None:
 
         await notification.send_error_notification(
             "笔记发布失败",
-            f"任务 ID: {post_id}\n话题: {post['topic']}\n错误: {str(e)[:200]}",
+            f"任务 ID: {post_id}\n话题: {post['topic']}\n账号: {post['account_id']}\n失败阶段: {_get_fail_stage(e)}\n错误类型: {type(e).__name__}\n错误详情: {str(e)[:500]}",
         )
     finally:
         for p in tmp_paths:
