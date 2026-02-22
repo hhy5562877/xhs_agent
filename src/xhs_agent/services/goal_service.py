@@ -272,9 +272,7 @@ async def execute_scheduled_post(post_id: int) -> None:
         images_json = json.dumps(
             [{"url": img.url, "b64_json": img.b64_json} for img in images]
         )
-        logger.debug(
-            f"定时任务 #{post_id} 图片生成完成: urls={[u[:60] for u in image_urls]}"
-        )
+        logger.debug(f"定时任务 #{post_id} 图片生成完成: urls={image_urls}")
 
         from ..services.account_service import get_cookie
 

@@ -84,15 +84,23 @@ def _make_client(cookie: str) -> XhsClient:
     return client
 
 
-async def download_image_to_tmp(url: str) -> str:
+async def download_image_to_tmp(url: str, max_retries: int = 3) -> str:
     """将图片 URL 下载到临时文件，返回本地路径"""
-    async with httpx.AsyncClient(timeout=240) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-        tmp.write(resp.content)
-        tmp.close()
-        return tmp.name
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=240) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+                tmp.write(resp.content)
+                tmp.close()
+                return tmp.name
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ReadError) as e:
+            logger.warning(
+                f"图片下载失败 (第{attempt}/{max_retries}次): {e}, url={url}"
+            )
+            if attempt == max_retries:
+                raise
 
 
 def upload_image_note(

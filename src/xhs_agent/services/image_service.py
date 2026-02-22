@@ -111,7 +111,7 @@ async def _call_image_api(
         return GeneratedImage()
     item = items[0]
     url = item.get("url")
-    logger.debug(f"[ImageAPI] 生成成功，url={url[:80] if url else None}")
+    logger.debug(f"[ImageAPI] 生成成功，url={url}")
     return GeneratedImage(url=url, b64_json=item.get("b64_json"))
 
 
