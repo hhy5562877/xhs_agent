@@ -121,7 +121,7 @@ async def generate_images(
     styles: list[ImageStyle] | None = None,
     ref_image_urls: list[str] | None = None,
 ) -> list[GeneratedImage]:
-    """并发生成多张图片，每张独立调用 API，支持按风格路由提示词"""
+    """生成多张图片。poster 风格串行生成（第1张结果作为后续参考图保持风格一致），photo 风格并发生成。"""
     if not prompts:
         return []
 
@@ -130,7 +130,6 @@ async def generate_images(
         logger.warning(f"不支持的宽高比 {aspect_ratio!r}，使用默认 3:4")
         size = _RATIO_TO_SIZE["3:4"]
 
-    # styles 长度不足时，默认补 photo
     if not styles:
         styles = ["photo"] * len(prompts)
     elif len(styles) < len(prompts):
@@ -141,20 +140,40 @@ async def generate_images(
         for p, s in zip(prompts, styles)
     ]
 
-    tasks = [
-        _call_image_api(p, size, aspect_ratio, ref_image_urls) for p in built_prompts
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    unified_style = styles[0] if styles else "photo"
+    is_poster = unified_style == "poster"
 
-    images: list[GeneratedImage] = []
-    for i, result in enumerate(results):
-        if isinstance(result, Exception):
-            logger.error(f"第{i + 1}张图片生成失败: {result}")
-            images.append(GeneratedImage())
-        else:
+    if is_poster:
+        images: list[GeneratedImage] = []
+        style_ref_urls = list(ref_image_urls) if ref_image_urls else []
+        for i, prompt in enumerate(built_prompts):
+            logger.info(f"[ImageAPI] poster 串行生成第 {i + 1}/{len(built_prompts)} 张")
+            result = await _call_image_api(
+                prompt,
+                size,
+                aspect_ratio,
+                ref_image_urls=style_ref_urls if style_ref_urls else None,
+            )
             images.append(result)
+            if i == 0 and result.url:
+                style_ref_urls.append(result.url)
+                logger.debug(f"[ImageAPI] 第1张结果加入风格参考: {result.url}")
+        return images
+    else:
+        tasks = [
+            _call_image_api(p, size, aspect_ratio, ref_image_urls)
+            for p in built_prompts
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    return images
+        images = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"第{i + 1}张图片生成失败: {result}")
+                images.append(GeneratedImage())
+            else:
+                images.append(result)
+        return images
 
 
 async def generate_image(
