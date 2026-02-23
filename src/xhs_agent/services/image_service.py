@@ -145,19 +145,29 @@ async def generate_images(
 
     if is_poster:
         images: list[GeneratedImage] = []
-        style_ref_urls = list(ref_image_urls) if ref_image_urls else []
+        base_ref_urls = list(ref_image_urls) if ref_image_urls else []
+        first_result_url: str | None = None
         for i, prompt in enumerate(built_prompts):
-            logger.info(f"[ImageAPI] poster 串行生成第 {i + 1}/{len(built_prompts)} 张")
+            current_refs = list(base_ref_urls)
+            if first_result_url:
+                current_refs.append(first_result_url)
+            logger.info(
+                f"[ImageAPI] poster 串行生成第 {i + 1}/{len(built_prompts)} 张, "
+                f"参考图: 总管AI={len(base_ref_urls)}张"
+                + (f" + 首图风格锚定=1张" if first_result_url else "")
+            )
             result = await _call_image_api(
                 prompt,
                 size,
                 aspect_ratio,
-                ref_image_urls=style_ref_urls if style_ref_urls else None,
+                ref_image_urls=current_refs if current_refs else None,
             )
             images.append(result)
             if i == 0 and result.url:
-                style_ref_urls.append(result.url)
-                logger.debug(f"[ImageAPI] 第1张结果加入风格参考: {result.url}")
+                first_result_url = result.url
+                logger.debug(
+                    f"[ImageAPI] 首图生成完成，后续将以此为风格锚定: {result.url}"
+                )
         return images
     else:
         tasks = [
