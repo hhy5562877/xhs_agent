@@ -314,7 +314,7 @@ async def execute_scheduled_post(post_id: int) -> None:
         logger.debug(f"定时任务 #{post_id} 图片下载完成: tmp_paths={tmp_paths}")
 
         # 5. 上传笔记
-        desc = content.body + "\n\n" + " ".join(f"#{t}" for t in content.hashtags)
+        desc = content.body
         result = await asyncio.to_thread(
             upload_image_note,
             cookie,

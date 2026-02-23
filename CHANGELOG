@@ -1,3 +1,4 @@
+- [2026-02-23 12:10] FIX: 修复发布时话题重复出现问题——去掉正文末尾手动拼接的 #话题 纯文字，话题引用完全由 topics 参数负责 (Files: src/xhs_agent/services/goal_service.py)
 - [2026-02-23 00:30] DOCS: README全面更新——新增核心流程（定时任务执行链路、参考图片系统、风格判断逻辑）、技术架构补充所有服务模块、系统配置补充COS和视觉模型、数据存储补充新表 (Files: README.md)
 - [2026-02-23 00:25] REFACTOR: 优化poster串行生图参考图逻辑——总管AI参考图与首图风格锚定分离，第1张用总管AI参考图生成，第2张起同时传入总管AI参考图+第1张结果，日志明确输出参考图来源 (Files: src/xhs_agent/services/image_service.py)
 - [2026-02-23 00:20] FEAT: poster风格图片串行生成保持风格一致——第1张生成后将其URL作为参考图传入后续生成请求，确保整组海报视觉风格统一；photo风格保持并发生成 (Files: src/xhs_agent/services/image_service.py)
