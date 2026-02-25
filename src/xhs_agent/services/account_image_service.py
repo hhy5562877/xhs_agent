@@ -280,16 +280,23 @@ async def get_categorized_groups(account_id: str) -> dict[str, list[dict]]:
     return result
 
 
-async def get_groups_by_ids(group_ids: list[int]) -> list[dict]:
+async def get_groups_by_ids(group_ids: list[int], account_id: str = "") -> list[dict]:
     if not group_ids:
         return []
     placeholders = ",".join("?" for _ in group_ids)
     async with get_db() as db:
-        async with db.execute(
-            f"SELECT * FROM image_groups WHERE id IN ({placeholders}) AND status = 'done'",
-            group_ids,
-        ) as cur:
-            groups = [dict(r) for r in await cur.fetchall()]
+        if account_id:
+            async with db.execute(
+                f"SELECT * FROM image_groups WHERE id IN ({placeholders}) AND account_id = ? AND status = 'done'",
+                group_ids + [account_id],
+            ) as cur:
+                groups = [dict(r) for r in await cur.fetchall()]
+        else:
+            async with db.execute(
+                f"SELECT * FROM image_groups WHERE id IN ({placeholders}) AND status = 'done'",
+                group_ids,
+            ) as cur:
+                groups = [dict(r) for r in await cur.fetchall()]
 
     for g in groups:
         async with get_db() as db:

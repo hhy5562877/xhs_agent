@@ -237,7 +237,7 @@ async def execute_scheduled_post(post_id: int) -> None:
         if ref_ids:
             from ..services.account_image_service import get_groups_by_ids
 
-            ref_groups = await get_groups_by_ids(ref_ids)
+            ref_groups = await get_groups_by_ids(ref_ids, account_id=post["account_id"])
             for g in ref_groups:
                 ref_images.append(
                     {
