@@ -88,7 +88,7 @@ async def download_image_to_tmp(url: str, max_retries: int = 3) -> str:
     """将图片 URL 下载到临时文件，返回本地路径"""
     for attempt in range(1, max_retries + 1):
         try:
-            async with httpx.AsyncClient(timeout=240) as client:
+            async with httpx.AsyncClient(timeout=600) as client:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")

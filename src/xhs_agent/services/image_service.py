@@ -86,7 +86,7 @@ async def _call_image_api(
         payload["image"] = ref_image_urls
         logger.debug(f"[ImageAPI] 传入参考图: {[u[:60] for u in ref_image_urls]}")
 
-    async with httpx.AsyncClient(timeout=180.0) as client:
+    async with httpx.AsyncClient(timeout=360.0) as client:
         response = await client.post(
             f"{base_url}/images/generations",
             headers={
